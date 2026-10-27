@@ -96,7 +96,7 @@ internal partial class YearReportWindow : Window
         LoadYear(year);
     }
 
-    /// <summary>汇总要把全部记录过一遍（「今年的新歌」得知道以前听没听过），放到线程池去算。</summary>
+    /// <summary>汇总要把全部记录过一遍（「久别重逢」得知道每首歌上一回是哪天听的），放到线程池去算。</summary>
     private async void LoadYear(int year)
     {
         var version = ++_version;

@@ -5,7 +5,7 @@
         Title="任务栏歌词 - 听歌统计" Width="920" Height="760" MinWidth="740" MinHeight="520"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResizeWithGrip"
         Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
-    <!-- 单页仪表盘：概览卡 → 趋势图 → 按时间范围的明细（小结、歌曲/歌手/专辑/新歌榜、24 小时分布、
+    <!-- 单页仪表盘：概览卡 → 趋势图 → 按时间范围的明细（小结、歌曲/歌手/专辑/越听越多的歌手榜、24 小时分布、
          一周热力图、播放器）→ 趣味发现。页头的播放器筛选对整页生效。
          样式与模板在 StatsResources.xaml，年度报告窗口也用那一份 -->
     <Window.Resources>
@@ -133,7 +133,7 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock Style="{StaticResource CardHeader}" Text="听了些什么" FontSize="16" Margin="2,0,0,0"
                                VerticalAlignment="Center"/>
-                    <!-- 榜单排序：歌曲、歌手、专辑、新歌四张榜一起切 -->
+                    <!-- 榜单排序：歌曲、歌手、专辑、越听越多四张榜一起切 -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,16,0">
                         <RadioButton x:Name="SortPlays" Style="{StaticResource Seg}" GroupName="Sort" Content="按次数"
                                      IsChecked="True" Checked="Sort_Checked"/>
@@ -190,9 +190,9 @@
                         </Border>
                         <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource Panel}">
                             <StackPanel>
-                                <TextBlock Style="{StaticResource PanelTitle}" Text="新发现的歌" Margin="0,0,0,6"/>
-                                <ItemsControl x:Name="NewSongList" ItemTemplate="{StaticResource RankTemplate}"/>
-                                <TextBlock x:Name="NewSongNote" Style="{StaticResource PanelNote}"/>
+                                <TextBlock Style="{StaticResource PanelTitle}" Text="越听越多的歌手" Margin="0,0,0,6"/>
+                                <ItemsControl x:Name="RisingList" ItemTemplate="{StaticResource RankTemplate}"/>
+                                <TextBlock x:Name="RisingNote" Style="{StaticResource PanelNote}"/>
                             </StackPanel>
                         </Border>
                     </Grid>

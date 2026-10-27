@@ -39,8 +39,8 @@ internal sealed record StatsRangeView(
     StatsRankPair Artists,
     StatsRankPair Albums,
     string AlbumNote,
-    StatsRankPair NewSongs,
-    string NewSongsNote,
+    StatsRankPair Rising,                  // 越听越多的歌手：跟上一段比多听了的
+    string RisingNote,
     IReadOnlyList<StatsBar> Hours,
     string PeakText,
     IReadOnlyList<StatsHeatCell> Heat,
@@ -73,7 +73,6 @@ internal sealed record YearReport(
     int Artists,
     int Albums,
     int ActiveDays,
-    int? NewSongs,                         // 记录就是这年开始的话每首都是新歌，这个数没意义，为 null
     IReadOnlyList<StatsRankRow> TopSongs,
     IReadOnlyList<StatsRankRow> TopArtists,
     IReadOnlyList<StatsRankRow> TopAlbums,
@@ -93,6 +92,14 @@ internal static class StatsReport
     private const int MaxPlayers = 6;
     private const double StreakMinS = 60;       // 一天累计听满这么久才算「这天听过歌」
     private const double AlbumNoteRatio = 0.05; // 没专辑信息的时长占到这么多，才在专辑榜下注明
+    private const double SittingGapS = 600;     // 停了不到这么久又接着听，还算同一回（倒杯水回来不算断）
+    private const double MarathonMinS = 600;    // 一口气听满这么久才值得一提
+    private const int BingeMinSongs = 5;        // 连着听同一位歌手这么多首才值得一提
+    private const int ReunionMinDays = 7;       // 一首歌隔了这么多天又听，才算「久别重逢」
+    private const double SkipMarginS = 10;      // 换歌时离结尾还差这么多以上，算没听完就切走
+    private const int FinishMinEndings = 10;    // 换过这么多次歌，听完率才有点意思
+    private const double MovieS = 2 * 3600;     // 换算成电影：一部按 2 小时算
+    private const double RisingMinS = 60;       // 比上一段多听不到这么久，不算「越听越多」
 
     private static readonly string[] WeekdayNames = { "周日", "周一", "周二", "周三", "周四", "周五", "周六" };
 
@@ -109,6 +116,10 @@ internal static class StatsReport
     /// <summary>一张专辑的身份：归一化的专辑名 + 归一化的第一位歌手。
     /// 只按名字合并的话，不同歌手的同名专辑（「Greatest Hits」）会被并成一张。</summary>
     private sealed record AlbumId(string Key, string Name, string Artist);
+
+    /// <summary>连着听的一回：片段一段接一段，中间停不到 <see cref="SittingGapS"/>。
+    /// Songs 数的是换了几首（同一首循环、暂停后续播不重复算），Title 是最后换上的那首。</summary>
+    private sealed record Sitting(DateTime Start, DateTime End, double S, int Songs, string Title);
 
     private sealed class Agg
     {
@@ -135,8 +146,15 @@ internal static class StatsReport
         public readonly Dictionary<DateTime, double> Days = new();
         public readonly Dictionary<DateTime, int> DayPlays = new();
         public readonly Dictionary<(DateTime Day, string Song), int> Loops = new();
+        public readonly Dictionary<DateTime, HashSet<string>> DaySongs = new(); // 每天听了哪几首（算过一次播放的）
         public (DateTime Day, TimeSpan At, string Title)? Owl; // 凌晨 0~5 点里听到最晚的那一刻
+        public (DateTime Day, TimeSpan At, string Title)? Early; // 一天的第一首在 5~9 点开始的，最早的那一回
         public (DateTime Day, SongId Song)? First;             // 窗口里第一首歌
+        public Sitting? Marathon;                              // 一口气听得最久的那一回
+        public (int Songs, DateTime Day, string Name)? Binge;  // 连着听同一位歌手最多的那一串
+        public (int Gap, DateTime Prev, DateTime Day, string Title)? Reunion; // 隔得最久又听起来的歌
+        public int Endings, Skips;                             // 换歌的次数、其中没听到结尾就切走的次数
+        public readonly Dictionary<string, int> SkipSongs = new();
 
         public bool Includes(DateTime day) => (From == null || day >= From) && (To == null || day <= To);
     }
@@ -147,7 +165,8 @@ internal static class StatsReport
         private readonly Dictionary<(string, string), SongId> _ids = new();
         private readonly Dictionary<string, string> _players = new();
         private readonly Dictionary<(string, string), AlbumId?> _albums = new();
-        public readonly Dictionary<string, DateTime> SongFirstDay = new(); // 每首歌第一次听是哪天
+        public readonly Dictionary<string, DateTime> SongLastDay = new();  // 每首歌上一回算过播放是哪天
+        public readonly HashSet<DateTime> DaysStarted = new();              // 已经有过播放的日子
 
         public SongId Song(ListenSegment s)
         {
@@ -233,10 +252,17 @@ internal static class StatsReport
             [StatsRange.Year] = new(new DateTime(today.Year, 1, 1), today),
             [StatsRange.All] = new(null, null),
         };
+        // 「越听越多的歌手」拿来比的上一段：一样长、紧挨在前面；今年比的是去年同期。「全部」没有上一段
+        var previous = new Dictionary<StatsRange, (RangeAcc Acc, string Label)>
+        {
+            [StatsRange.Week] = (new(today.AddDays(-13), today.AddDays(-7)), "前 7 天"),
+            [StatsRange.Month] = (new(today.AddDays(-59), today.AddDays(-30)), "前 30 天"),
+            [StatsRange.Year] = (new(new DateTime(today.Year - 1, 1, 1), today.AddYears(-1)), "去年同期"),
+        };
 
         var ordered = (player == null ? segments : segments.Where(s => ctx.Player(s.Src) == player))
             .OrderBy(s => s.T).ToList();
-        Accumulate(ordered, ranges.Values.ToList(), ctx);
+        Accumulate(ordered, [.. ranges.Values, .. previous.Values.Select(p => p.Acc)], ctx);
 
         var all = ranges[StatsRange.All];
         var days = all.Days;
@@ -256,7 +282,11 @@ internal static class StatsReport
             new("日均", FormatDuration(dailyAvg), avgDays < 30 ? $"按已记录的 {avgDays} 天算" : "近 30 天"),
         };
 
-        var views = ranges.ToDictionary(kv => kv.Key, kv => BuildRange(kv.Key, kv.Value, today, firstDay, ctx));
+        // 比不出来的范围给个去处：统计窗默认看近 30 天，刚开始记录的头一个多月这一栏只有一句「比不出来」
+        var hint = Coverage(previous[StatsRange.Month].Acc, firstDay).Enough ? "，先看看「近 30 天」的吧"
+            : Coverage(previous[StatsRange.Week].Acc, firstDay).Enough ? "，先看看「近 7 天」的吧" : "";
+        var views = ranges.ToDictionary(kv => kv.Key, kv => BuildRange(kv.Key, kv.Value,
+            previous.TryGetValue(kv.Key, out var prev) ? prev : null, hint, today, firstDay));
 
         return new StatsSnapshot(
             ordered.Count, firstDay, all.TotalS, dailyAvg, overview,
@@ -276,12 +306,10 @@ internal static class StatsReport
         var from = new DateTime(year, 1, 1);
         var end = new DateTime(year, 12, 31);
         var acc = new RangeAcc(from, end < now.Date ? end : now.Date);
-        // 全部记录都要过一遍：「今年的新歌」得知道每首歌以前听没听过
+        // 全部记录都要过一遍：「久别重逢」得知道每首歌上一回是哪天听的，那一回可能在去年
         var ordered = segments.OrderBy(s => s.T).ToList();
         Accumulate(ordered, [acc], ctx);
 
-        var firstEver = ctx.SongFirstDay.Count > 0 ? ctx.SongFirstDay.Values.Min() : from;
-        int? fresh = firstEver < from ? acc.Songs.Keys.Count(k => ctx.SongFirstDay[k] >= from) : null;
         var songs = RankPair(acc.Songs.Values, a => a.Sub, YearTopN, StatsArtKind.Song);
         var artists = RankPair(acc.Artists.Values, a => $"{a.Songs?.Count ?? 0} 首歌", YearTopN, StatsArtKind.Artist);
         var albums = RankPair(acc.Albums.Values, AlbumSub, YearTopN, StatsArtKind.Album);
@@ -292,20 +320,21 @@ internal static class StatsReport
         var reference = from;
         var highlights = new List<StatsFact>();
         if (BestDayFact(acc, reference) is { } best) highlights.Add(best);
+        if (MarathonFact(acc, reference) is { } marathon) highlights.Add(marathon);
         if (LoopFact(acc, reference) is { } loop) highlights.Add(loop);
         if (OwlFact(acc, reference) is { } owl) highlights.Add(owl);
+        if (EarlyFact(acc, reference) is { } early) highlights.Add(early);
         if (LongestStreakFact(acc, reference) is { } streak) highlights.Add(streak);
+        if (BingeFact(acc, reference) is { } binge) highlights.Add(binge);
+        if (ReunionFact(acc, reference) is { } reunion) highlights.Add(reunion);
         if (acc.First is { } first)
             // 歌名放说明里：说明会换行，值那一格是缩放的，长歌名会被缩到看不清
             highlights.Add(new("这一年的第一首歌", DateText(first.Day, reference), $"《{first.Song.Title}》 · {first.Song.Artist}"));
         if (acc.Players.Values.MaxBy(a => a.S) is { } main && acc.Players.Count > 1)
             highlights.Add(new("主力播放器", main.Name, $"占了 {Percent(main.S, acc.TotalS)} 的时长"));
-        // 一首新歌都没有时不放「0 首」这一格：海报上看着像在数落人
-        if (fresh is { } n and > 0)
-            highlights.Add(new("新发现", $"{n} 首", "这一年第一次听到的歌"));
 
         return new YearReport(year, acc.TotalS, acc.Plays, acc.Songs.Count, acc.Artists.Count, acc.Albums.Count,
-            acc.Days.Count(kv => kv.Value >= StreakMinS), fresh,
+            acc.Days.Count(kv => kv.Value >= StreakMinS),
             songs.ByPlays, artists.ByPlays, albums.ByPlays, AlbumNote(acc),
             YearMonthBars(acc.Days, year), PeakText(acc, peak), heatText, highlights);
     }
@@ -313,6 +342,16 @@ internal static class StatsReport
     /// <summary>唯一一处遍历片段的循环：每个片段的次数、按整点拆开的时长，分给落在其日期窗口里的累加器。</summary>
     private static void Accumulate(List<ListenSegment> ordered, IReadOnlyList<RangeAcc> accs, Ctx ctx)
     {
+        // 当前这一回连着听的状态：一口气听了多久、每位歌手连着听了几首。
+        // 只算过一次播放的片段才算换了一首：开头几秒就切走的碎片不打断连听，也不算数
+        double? lastEnd = null;                                // 这一回听到了哪一刻（unix 秒）
+        DateTime sitStart = default, sitEnd = default;
+        double sitS = 0;
+        int sitSongs = 0;
+        string sitTitle = "";
+        string? lastSong = null;
+        var runs = new Dictionary<string, (int Songs, DateTime Day, string Name)>();
+
         foreach (var seg in ordered)
         {
             var id = ctx.Song(seg);
@@ -320,11 +359,63 @@ internal static class StatsReport
             var album = ctx.Album(seg);
             var start = StatsStore.LocalStart(seg);
             var startDay = start.Date;
-            ctx.SongFirstDay.TryAdd(id.Key, startDay);
+
+            var segEnd = start.AddSeconds(seg.S);
+            if (lastEnd == null || seg.T - lastEnd > SittingGapS)
+            {
+                sitStart = sitEnd = start;
+                sitS = 0;
+                sitSongs = 0;
+                sitTitle = "";
+                lastSong = null;
+                runs.Clear();
+            }
+            // 片段有重叠（两份程序同时在记）时只算多出来的那一截：一口气听的时长不会超过起止钟点
+            sitS += Math.Max(0, seg.T + seg.S - Math.Max(seg.T, lastEnd ?? seg.T));
+            lastEnd = Math.Max(lastEnd ?? 0, seg.T + seg.S);
+            if (segEnd > sitEnd) sitEnd = segEnd;
+            if (seg.P > 0 && id.Key != lastSong)
+            {
+                lastSong = id.Key;
+                sitSongs++;
+                sitTitle = id.Title;
+                // 合唱的歌算进每位歌手的那一串：「DAOKO/米津玄師」接在米津玄師后面不打断
+                var next = new Dictionary<string, (int Songs, DateTime Day, string Name)>();
+                foreach (var a in id.Artists)
+                    next[a.Key] = runs.TryGetValue(a.Key, out var r) ? (r.Songs + 1, r.Day, a.Name) : (1, startDay, a.Name);
+                runs = next;
+            }
+
+            // 久别重逢、早起只看算过播放的片段：开机自动续播的几秒钟不算「又想起来了」「起床了」
+            var gap = 0;
+            var prevDay = default(DateTime);
+            var early = false;
+            if (seg.P > 0)
+            {
+                if (ctx.SongLastDay.TryGetValue(id.Key, out prevDay)) gap = (startDay - prevDay).Days;
+                ctx.SongLastDay[id.Key] = startDay;
+                // 当天的第一首在 5~9 点才开始，才是早起；熬夜熬过 5 点的那一首当天早就开始听了，不算
+                early = ctx.DaysStarted.Add(startDay) && start.Hour is >= 5 and < 9;
+            }
 
             foreach (var acc in accs)
             {
+                // 一口气听、连听按开头那天归窗口：跨过窗口边界的那一回不拆
+                if (acc.Includes(sitStart.Date) && sitS > (acc.Marathon?.S ?? 0))
+                    acc.Marathon = new Sitting(sitStart, sitEnd, sitS, sitSongs, sitTitle);
+                foreach (var run in runs.Values)
+                    if (acc.Includes(run.Day) && run.Songs > (acc.Binge?.Songs ?? 0)) acc.Binge = run;
+
                 if (!acc.Includes(startDay)) continue;
+                if (seg.E == "song" && seg.D > 0)
+                {
+                    acc.Endings++;
+                    if (seg.Pe < seg.D - SkipMarginS)
+                    {
+                        acc.Skips++;
+                        acc.SkipSongs[id.Key] = acc.SkipSongs.GetValueOrDefault(id.Key) + 1;
+                    }
+                }
                 // 播放次数不拆，整段记在开始的那天：一次播放只能属于一天
                 if (seg.P <= 0) continue;
                 // 第一首按「算过一次播放」的片段取：开头几秒就切走、开机自动续播的碎片不算
@@ -332,9 +423,14 @@ internal static class StatsReport
                 acc.Plays += seg.P;
                 acc.DayPlays[startDay] = acc.DayPlays.GetValueOrDefault(startDay) + seg.P;
                 acc.Loops[(startDay, id.Key)] = acc.Loops.GetValueOrDefault((startDay, id.Key)) + seg.P;
+                if (!acc.DaySongs.TryGetValue(startDay, out var daySongs)) acc.DaySongs[startDay] = daySongs = new();
+                daySongs.Add(id.Key);
                 Song(acc, id, album).P += seg.P;
                 foreach (var a in id.Artists) Get(acc.Artists, a.Key, a.Name, "").P += seg.P;
                 if (album != null) Get(acc.Albums, album.Key, album.Name, album.Artist).P += seg.P;
+                if (gap >= ReunionMinDays && gap > (acc.Reunion?.Gap ?? 0)) acc.Reunion = (gap, prevDay, startDay, id.Title);
+                if (early && (acc.Early == null || start.TimeOfDay < acc.Early.Value.At))
+                    acc.Early = (startDay, start.TimeOfDay, id.Title);
             }
 
             // 时长按整点拆开：跨午夜的片段前后两天各记各的，24 小时分布也按实际钟点落位
@@ -417,7 +513,8 @@ internal static class StatsReport
         return n.Length > 0 ? n : s.Trim().ToLowerInvariant();
     }
 
-    private static StatsRangeView BuildRange(StatsRange r, RangeAcc acc, DateTime today, DateTime firstDay, Ctx ctx)
+    private static StatsRangeView BuildRange(StatsRange r, RangeAcc acc, (RangeAcc Acc, string Label)? previous,
+        string hint, DateTime today, DateTime firstDay)
     {
         var (heat, heatText) = Heat(acc.Week, acc.TotalS);
         if (acc.TotalS <= 0 && acc.Plays == 0)
@@ -431,26 +528,8 @@ internal static class StatsReport
             StatsRange.Year => "今年你听了",
             _ => $"从 {firstDay.Year} 年 {firstDay.Month} 月 {firstDay.Day} 日开始，你一共听了",
         };
-        var summary = $"{head} {FormatDuration(acc.TotalS)}，播放 {acc.Plays} 次，共 {acc.Songs.Count} 首歌";
-
-        // 新歌：记录是在这段时间里才开始的话，每首歌都是「第一次」，列出来就没意义了
-        var newSongs = StatsRankPair.Empty;
-        string newNote;
-        if (acc.From is not { } from)
-        {
-            summary += $"、{acc.Artists.Count} 位歌手";
-            newNote = "「全部」里的每首歌都是第一次听，换个时间范围看看这段时间新发现了哪些歌。";
-        }
-        else if (firstDay >= from)
-            newNote = $"记录是从 {firstDay.Month} 月 {firstDay.Day} 日才开始的，这段时间里每首歌都是第一次听。";
-        else
-        {
-            var fresh = acc.Songs.Values.Where(a => ctx.SongFirstDay[a.Key] >= from).ToList();
-            summary += fresh.Count > 0 ? $"，其中 {fresh.Count} 首是第一次听" : "，都是听过的老朋友";
-            newSongs = RankPair(fresh, a => $"{a.Sub} · {ShortDate(ctx.SongFirstDay[a.Key], today)} 第一次听", TopN, StatsArtKind.Song);
-            newNote = fresh.Count > 0 ? "" : "这段时间听的都是以前听过的歌。";
-        }
-        summary += "。";
+        var summary = $"{head} {FormatDuration(acc.TotalS)}，播放 {acc.Plays} 次，共 {acc.Songs.Count} 首歌、{acc.Artists.Count} 位歌手。";
+        var (rising, risingNote) = Rising(acc, previous, hint, today, firstDay);
 
         var players = acc.Players.Values.OrderByDescending(a => a.S).Take(MaxPlayers).ToList();
         var playerRows = players.Select((a, i) => new StatsRankRow(i + 1, a.Name, "",
@@ -461,8 +540,49 @@ internal static class StatsReport
             RankPair(acc.Songs.Values, a => a.Sub, TopN, StatsArtKind.Song),
             RankPair(acc.Artists.Values, a => $"{a.Songs?.Count ?? 0} 首歌", TopN, StatsArtKind.Artist),
             RankPair(acc.Albums.Values, AlbumSub, TopN, StatsArtKind.Album), AlbumNote(acc),
-            newSongs, newNote,
+            rising, risingNote,
             HourBars(acc.Hours, peak.Hour), PeakText(acc, peak), heat, heatText, playerRows);
+    }
+
+    /// <summary>越听越多的歌手：跟上一段比，多听了的排前面，次数、时长各排一份。
+    /// 原先这里是「新发现的歌」，可「第一次听」只能从开始记录那天算起，以前早听熟了的歌照样被当成新歌，没什么意义。
+    /// 上一段只有不到一半的日子在记录里时不比：记录才开始几天，人人都像是「上回没听」，涨幅全是虚的。
+    /// hint 接在「比不出来」后面，指去比得出来的范围。</summary>
+    private static (StatsRankPair Rows, string Note) Rising(RangeAcc cur, (RangeAcc Acc, string Label)? previous,
+        string hint, DateTime today, DateTime firstDay)
+    {
+        if (previous is not { } p) return (StatsRankPair.Empty, "「全部」没有更早的一段可以比，换个时间范围看看。");
+        var (prev, label) = p;
+        var (covered, len, enough) = Coverage(prev, firstDay);
+        var start = (firstDay.Year == today.Year ? "" : $"{firstDay.Year} 年 ") + $"{firstDay.Month} 月 {firstDay.Day} 日";
+        if (!enough) return (StatsRankPair.Empty, $"记录是从 {start}才开始的，{label}的记录还不够，比不出来{hint}。");
+
+        List<StatsRankRow> rank(Func<Agg, double> value, double min, Func<double, string> format)
+        {
+            var up = cur.Artists.Values
+                .Select(a => (Now: a, Was: prev.Artists.GetValueOrDefault(a.Key)))
+                .Select(x => (x.Now, x.Was, D: value(x.Now) - (x.Was == null ? 0 : value(x.Was))))
+                .Where(x => x.D >= min)
+                .OrderByDescending(x => x.D).ThenByDescending(x => value(x.Now))
+                .ThenBy(x => x.Now.Name, StringComparer.Ordinal).Take(TopN).ToList();
+            var top = up.Count > 0 ? up[0].D : 0;
+            return up.Select((x, i) => new StatsRankRow(i + 1, x.Now.Name,
+                (x.Was is { } w && (w.P > 0 || w.S >= 1) ? $"{label} {format(value(w))}" : $"{label}没听") + $" → {format(value(x.Now))}",
+                $"+{format(x.D)}", Ratio(x.D, top), StatsArtKind.Artist, ArtistArtPrefix + x.Now.Key)).ToList();
+        }
+
+        var rows = new StatsRankPair(rank(a => a.P, 1, d => $"{d:0} 次"), rank(a => a.S, RisingMinS, FormatDuration));
+        if (rows.ByPlays.Count == 0 && rows.ByTime.Count == 0) return (rows, $"跟{label}比，没有哪位歌手听得更多。");
+        return (rows, covered < len ? $"记录是从 {start}才开始的，{label}里只有 {covered} 天有记录，涨幅会显得大一些。" : "");
+    }
+
+    /// <summary>上一段有几天在记录范围里（记录开始之前的日子不算）、一共几天，够不够拿来比：至少一半的日子有记录。</summary>
+    private static (int Covered, int Len, bool Enough) Coverage(RangeAcc prev, DateTime firstDay)
+    {
+        var (from, to) = (prev.From!.Value, prev.To!.Value);
+        var covered = Math.Max(0, (to - (firstDay > from ? firstDay : from)).Days + 1);
+        var len = (to - from).Days + 1;
+        return (covered, len, covered * 2 >= len);
     }
 
     private static string AlbumSub(Agg a)
@@ -630,8 +750,23 @@ internal static class StatsReport
         if (all.Days.Count == 0) return facts;
 
         facts.Add(BestDayFact(all, today)!);
+        if (MarathonFact(all, today) is { } marathon) facts.Add(marathon);
         if (LoopFact(all, today) is { } loop) facts.Add(loop);
         if (OwlFact(all, today) is { } owl) facts.Add(owl);
+        if (EarlyFact(all, today) is { } early) facts.Add(early);
+        // 今天还没过完，不拿来比
+        if (WeekdayFact(all, firstDay, today.AddDays(-1)) is { } weekday) facts.Add(weekday);
+        if (BingeFact(all, today) is { } binge) facts.Add(binge);
+        if (ReunionFact(all, today) is { } reunion) facts.Add(reunion);
+        if (FinishFact(all) is { } finish) facts.Add(finish);
+        if (all.Artists.Count >= 3)
+        {
+            var once = all.Artists.Values.Count(a => (a.Songs?.Count ?? 0) <= 1);
+            facts.Add(new("听过的歌手", $"{all.Artists.Count} 位",
+                once > 0 ? $"其中 {once} 位只听过一首" : "每位都听过不止一首"));
+        }
+        if ((int)(all.TotalS / MovieS) is var movies and >= 1)
+            facts.Add(new("换算一下", $"{movies} 部电影", $"累计 {FormatDuration(all.TotalS)}，按一部电影 2 小时算"));
         if (LongestStreakFact(all, today) is { } longest) facts.Add(longest);
 
         // 当前连续：今天还没听够时，从昨天往前数——今天还没过完，不算断
@@ -655,7 +790,22 @@ internal static class StatsReport
     {
         if (acc.Days.Count == 0) return null;
         var best = acc.Days.MaxBy(kv => kv.Value);
-        return new("听歌最多的一天", FormatDuration(best.Value), DateText(best.Key, reference));
+        var date = DateText(best.Key, reference);
+        // 曲数按播放算在开始的那天，跟时长的拆法不同：那天只有跨午夜过来的半首时就不写
+        var n = acc.DaySongs.TryGetValue(best.Key, out var songs) ? songs.Count : 0;
+        return new("听歌最多的一天", FormatDuration(best.Value), n > 0 ? $"{date}，听了 {n} 首歌" : date);
+    }
+
+    /// <summary>一口气听最久：停下不到 <see cref="SittingGapS"/> 又接着听的算同一回。时长只算真在放的，
+    /// 起止时刻写的是钟点，中间短暂停的那几分钟也在里面。</summary>
+    private static StatsFact? MarathonFact(RangeAcc acc, DateTime reference)
+    {
+        if (acc.Marathon is not { S: >= MarathonMinS } m) return null;
+        var when = $"{DateText(m.Start.Date, reference)} {m.Start:HH:mm}–{m.End:HH:mm}";
+        return new("一口气听最久", FormatDuration(m.S),
+            m.Songs > 1 ? $"{when}，连听了 {m.Songs} 首"
+            : m.Title.Length > 0 ? $"{when}，一直在听《{m.Title}》"
+            : when);
     }
 
     private static StatsFact? LoopFact(RangeAcc acc, DateTime reference)
@@ -671,6 +821,65 @@ internal static class StatsReport
         => acc.Owl is { } o
             ? new("最晚的一次夜猫子", $"凌晨 {o.At.Hours}:{o.At.Minutes:00}", $"{DateText(o.Day, reference)}，还在听《{o.Title}》")
             : null;
+
+    private static StatsFact? EarlyFact(RangeAcc acc, DateTime reference)
+        => acc.Early is { } e
+            ? new("最早的一次早起", $"早上 {e.At.Hours}:{e.At.Minutes:00}", $"{DateText(e.Day, reference)}，第一首是《{e.Title}》")
+            : null;
+
+    private static StatsFact? BingeFact(RangeAcc acc, DateTime reference)
+        => acc.Binge is { Songs: >= BingeMinSongs } b
+            ? new("连听同一位歌手", $"{b.Songs} 首", $"{DateText(b.Day, reference)}，一首接一首全是{b.Name}的歌")
+            : null;
+
+    /// <summary>久别重逢：上一回是哪天写全，隔年的话两头的年份都看得出来。</summary>
+    private static StatsFact? ReunionFact(RangeAcc acc, DateTime reference)
+        => acc.Reunion is { } r
+            ? new("久别重逢", $"隔了 {r.Gap} 天", $"{ShortDate(r.Prev, reference)} 之后，{ShortDate(r.Day, reference)} 又听起了《{r.Title}》")
+            : null;
+
+    /// <summary>最爱星期几：按日历上有几个周二来平均，没听的那几天也算进去，
+    /// 不然只赶上过一个的星期几会凭那一天胜出。每个星期几至少赶上两回才比：
+    /// 只有一回时「平均」就是那一天，跟「听歌最多的一天」说的是同一件事。</summary>
+    private static StatsFact? WeekdayFact(RangeAcc acc, DateTime first, DateTime last)
+    {
+        var days = (last - first).Days + 1;
+        if (days < 14) return null;
+        var sum = new double[7];
+        var count = new int[7];
+        for (var d = first; d <= last; d = d.AddDays(1))
+        {
+            sum[(int)d.DayOfWeek] += acc.Days.GetValueOrDefault(d);
+            count[(int)d.DayOfWeek]++;
+        }
+        var best = Enumerable.Range(0, 7).MaxBy(i => sum[i] / count[i]);
+        var avg = sum[best] / count[best];
+        if (avg < 60) return null;
+        var usual = sum.Sum() / days;
+        // 「不到 1 分钟」前面不空格
+        return new("最爱星期几", WeekdayNames[best],
+            $"平均每个{WeekdayNames[best]}听 {FormatDuration(avg)}，平常一天{(usual is >= 1 and < 60 ? "" : " ")}{FormatDuration(usual)}");
+    }
+
+    /// <summary>听完率：换歌时听到了结尾的比例。只有报了歌曲时长和播放进度的播放器算得出来，
+    /// 暂停、关播放器那几次不算换歌。</summary>
+    private static StatsFact? FinishFact(RangeAcc acc)
+    {
+        if (acc.Endings < FinishMinEndings) return null;
+        // 向下取整：切走过就不会显示 100%
+        var rate = 100 * (acc.Endings - acc.Skips) / acc.Endings;
+        string detail;
+        if (acc.Skips == 0) detail = "换歌前每首都听到了结尾";
+        else
+        {
+            // 只切过一次的歌不点名：谁都可能手滑
+            var top = acc.SkipSongs.MaxBy(kv => kv.Value);
+            detail = top.Value >= 2 && acc.Songs.TryGetValue(top.Key, out var song)
+                ? $"中途切走 {acc.Skips} 次，最常被切的是《{song.Name}》"
+                : $"中途切走过 {acc.Skips} 次";
+        }
+        return new("听完率", $"{rate}%", detail);
+    }
 
     /// <summary>连续听歌：一天累计满 1 分钟才算，免得开机时自动续播的几秒钟也被算成打卡。</summary>
     private static StatsFact? LongestStreakFact(RangeAcc acc, DateTime reference)

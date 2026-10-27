@@ -47,7 +47,7 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
-    <!-- 榜单底下的说明（没有专辑信息、没有新歌之类），内容为空时收起 -->
+    <!-- 榜单底下的说明（没有专辑信息、记录太短比不出涨幅之类），内容为空时收起 -->
     <Style x:Key="PanelNote" TargetType="TextBlock" BasedOn="{StaticResource RowDesc}">
         <Setter Property="Margin" Value="0,6,0,0"/>
         <Style.Triggers>

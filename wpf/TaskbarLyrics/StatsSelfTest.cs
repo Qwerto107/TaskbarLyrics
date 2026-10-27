@@ -74,6 +74,7 @@ internal static class StatsSelfTest
             V2Tests(root);
             StoreTests(root);
             ReportTests();
+            FunFactTests();
             AlbumTests();
             ArtTests(root);
             FilterTests();
@@ -468,7 +469,8 @@ internal static class StatsSelfTest
     }
 
     private static ListenSegment Seg(DateTimeOffset at, double s, string ti, string ar, int p = 0,
-        string src = "cloudmusic.exe", string? al = null, string? aa = null, string? lal = null)
+        string src = "cloudmusic.exe", string? al = null, string? aa = null, string? lal = null,
+        string? e = null, double d = 0, double pe = 0)
         => new()
         {
             T = at.ToUnixTimeSeconds(),
@@ -481,6 +483,9 @@ internal static class StatsSelfTest
             Al = al,
             Aa = aa,
             Lal = lal,
+            E = e,
+            D = d,
+            Pe = pe,
         };
 
     private static readonly TimeSpan Cst = TimeSpan.FromHours(8);
@@ -521,7 +526,7 @@ internal static class StatsSelfTest
             $"跨午夜的片段拆给前后两天（3/10 = {snap.Days[28].Value}，3/11 = {snap.Days[29].Value}）");
         Check(Near(all.Hours[23].Value, 600) && Near(all.Hours[0].Value, 600) && Near(all.Hours[21].Value, 1800),
             "24 小时分布按实际钟点落位");
-        Check(week.Summary == "这 7 天你听了 1 小时 17 分，播放 8 次，共 5 首歌，其中 4 首是第一次听。", $"近 7 天小结：{week.Summary}");
+        Check(week.Summary == "这 7 天你听了 1 小时 17 分，播放 8 次，共 5 首歌、3 位歌手。", $"近 7 天小结：{week.Summary}");
         Check(all.Summary == "从 2026 年 1 月 5 日开始，你一共听了 1 小时 37 分，播放 9 次，共 6 首歌、4 位歌手。",
             $"全部小结：{all.Summary}");
         Check(!week.Songs.ByTime.Any(s => s.Title == "未来的歌") && all.Songs.ByTime.Any(s => s.Title == "未来的歌"),
@@ -546,10 +551,14 @@ internal static class StatsSelfTest
             "热力图各格加起来等于总时长");
         Check(week.HeatText == "最集中的一格是周二 22:00–23:00，占了 22%。", $"热力图小结：{week.HeatText}");
 
-        Check(week.NewSongs.ByPlays.Count == 4 && !week.NewSongs.ByPlays.Any(r => r.Title == "晴天") && week.NewSongsNote == ""
-              && week.NewSongs.ByPlays[0] is { Title: "Lemon", Sub: "米津玄師 · 3/10 第一次听" },
-            $"新发现的歌：近 7 天第一次听的 4 首，与小结一致（{Rows(week.NewSongs.ByPlays)}）");
-        Check(all.NewSongs.ByPlays.Count == 0 && all.NewSongsNote.Length > 0, "「全部」不列新歌，给一句说明");
+        // 前 7 天（2/26–3/4）在记录范围里但一首没听：三位歌手都是「没听」涨上来的
+        Check(Rows(week.Rising.ByPlays) == "米津玄師 +4 次、周杰伦 +3 次、YOASOBI +1 次" && week.RisingNote == ""
+              && week.Rising.ByPlays[0].Sub == "前 7 天没听 → 4 次",
+            $"越听越多的歌手：前 7 天没听过的也算（{Rows(week.Rising.ByPlays)}）");
+        Check(all.Rising.ByPlays.Count == 0 && all.RisingNote == "「全部」没有更早的一段可以比，换个时间范围看看。"
+              && snap.Ranges[StatsRange.Year].Rising.ByPlays.Count == 0
+              && snap.Ranges[StatsRange.Year].RisingNote == "记录是从 1 月 5 日才开始的，去年同期的记录还不够，比不出来，先看看「近 30 天」的吧。",
+            $"「全部」没有上一段、去年没有记录：不列，给一句说明，指去比得出来的范围（{snap.Ranges[StatsRange.Year].RisingNote}）");
         Check(all.Albums.ByPlays.Count == 0 && all.AlbumNote == "这段时间的记录里没有专辑信息：旧版本不记专辑，有的播放器也不报。",
             "全是旧版本的记录（没有专辑）时，专辑榜说明原因");
 
@@ -566,6 +575,20 @@ internal static class StatsSelfTest
         Check(f["最长连续听歌"].Value == "4 天" && f["最长连续听歌"].Detail == "3/8 – 3/11", "趣味：最长连续");
         Check(f["当前连续听歌"].Value == "4 天" && f["当前连续听歌"].Detail == "今天也听过了", "趣味：当前连续");
         Check(f["一起听歌的第一天"].Detail == "第一首是《晴天》，今天是第 66 天", $"趣味：第一天 {f["一起听歌的第一天"].Detail}");
+        Check(f["听歌最多的一天"].Detail == "3 月 10 日 周二，听了 3 首歌", $"趣味：最多的一天 {f["听歌最多的一天"].Detail}");
+        // 3/10 22:00 的 Lemon 到 23:50 隔了一个多小时，不算同一回；七里香 23:50 起一个人放了 20 分钟
+        Check(f.TryGetValue("一口气听最久", out var marathon) && marathon.Value == "20 分"
+              && marathon.Detail == "3 月 10 日 周二 23:50–00:10，一直在听《七里香》",
+            $"趣味：一口气听最久 {marathon?.Value}（{marathon?.Detail}）");
+        Check(f.TryGetValue("久别重逢", out var reunion) && reunion.Value == "隔了 62 天" && reunion.Detail == "1/5 之后，3/8 又听起了《晴天》",
+            $"趣味：久别重逢 {reunion?.Value}（{reunion?.Detail}）");
+        // 1/5（周一）到 3/10 共 65 天，周一、周二各 10 个；3/10 那 2200 秒摊下来每个周二 220 秒
+        Check(f.TryGetValue("最爱星期几", out var weekday) && weekday.Value == "周二" && weekday.Detail == "平均每个周二听 3 分，平常一天 1 分",
+            $"趣味：最爱星期几 {weekday?.Value}（{weekday?.Detail}）");
+        Check(f.TryGetValue("听过的歌手", out var singers) && singers.Value == "4 位" && singers.Detail == "其中 3 位只听过一首",
+            $"趣味：听过的歌手 {singers?.Value}（{singers?.Detail}）");
+        Check(!f.ContainsKey("最早的一次早起") && !f.ContainsKey("连听同一位歌手") && !f.ContainsKey("听完率") && !f.ContainsKey("换算一下"),
+            $"趣味：凑不够的不出（{string.Join("、", f.Keys)}）");
         Check(Near(snap.Weeks[^1].Value, snap.Days.TakeLast(3).Sum(d => d.Value))
               && Near(snap.Months[^1].Value, snap.Days.TakeLast(11).Sum(d => d.Value)),
             $"本周、本月的柱子截到今天，不含将来日期的记录（本月 {snap.Months[^1].Value} 秒）");
@@ -605,12 +628,123 @@ internal static class StatsSelfTest
               && lone.Hours.Select((h, i) => h.Highlight ? i : -1).Where(i => i >= 0).SequenceEqual([18, 19, 20]),
             $"高峰时段打平时取中间那小时听得多的一段：{lone.PeakText}");
         var loneWeek = loneSnap.Ranges[StatsRange.Week];
-        Check(loneWeek.NewSongs.ByPlays.Count == 0
-              && loneWeek.NewSongsNote == "记录是从 3 月 11 日才开始的，这段时间里每首歌都是第一次听。",
-            $"记录在这段时间里才开始 → 不列新歌（{loneWeek.NewSongsNote}）");
+        Check(loneWeek.Rising.ByPlays.Count == 0 && loneWeek.Rising.ByTime.Count == 0
+              && loneWeek.RisingNote == "记录是从 3 月 11 日才开始的，前 7 天的记录还不够，比不出来。"
+              && loneSnap.Ranges[StatsRange.Month].RisingNote == "记录是从 3 月 11 日才开始的，前 30 天的记录还不够，比不出来。",
+            $"上一段不到一半的日子有记录 → 不比，近 7 天也比不出来就不指过去（{loneWeek.RisingNote}）");
+
+        // 越听越多：前 7 天是 2/26–3/4。周杰伦 1 → 3 次；米津玄師一样多、YOASOBI 只多听了 30 秒，都不算；Aimer 前 7 天没听
+        List<ListenSegment> rise =
+        [
+            Seg(At(2, 20, 20, 0), 300, "晴天", "周杰伦", 1), // 让前 7 天整段都在记录范围里
+            Seg(At(3, 2, 20, 0), 600, "晴天", "周杰伦", 1),
+            Seg(At(3, 3, 20, 0), 600, "Lemon", "米津玄師", 2),
+            Seg(At(3, 3, 21, 0), 300, "群青", "YOASOBI", 1),
+            Seg(At(3, 9, 20, 0), 1800, "七里香", "周杰伦", 3),
+            Seg(At(3, 10, 20, 0), 600, "Lemon", "米津玄師", 2),
+            Seg(At(3, 10, 21, 0), 330, "夜に駆ける", "YOASOBI", 1),
+            Seg(At(3, 10, 22, 0), 400, "残響散歌", "Aimer", 1),
+        ];
+        var riseSnap = StatsReport.Build(rise, now);
+        var riseWeek = riseSnap.Ranges[StatsRange.Week];
+        Check(Rows(riseWeek.Rising.ByPlays) == "周杰伦 +2 次、Aimer +1 次"
+              && riseWeek.Rising.ByPlays.Select(r => r.Sub).SequenceEqual(["前 7 天 1 次 → 3 次", "前 7 天没听 → 1 次"])
+              && riseWeek.Rising.ByPlays.Select(r => r.Ratio).SequenceEqual([1, 0.5]) && riseWeek.RisingNote == "",
+            $"越听越多按次数：只列多听了的，没涨的、少听的不列（{Rows(riseWeek.Rising.ByPlays)}）");
+        Check(riseSnap.Ranges[StatsRange.Month].RisingNote == "记录是从 2 月 20 日才开始的，前 30 天的记录还不够，比不出来，先看看「近 7 天」的吧。",
+            $"近 30 天比不出来、近 7 天比得出来：指去近 7 天（{riseSnap.Ranges[StatsRange.Month].RisingNote}）");
+        Check(Rows(riseWeek.Rising.ByTime) == "周杰伦 +20 分、Aimer +6 分"
+              && riseWeek.Rising.ByTime[0].Sub == "前 7 天 10 分 → 30 分"
+              && riseWeek.Rising.ByTime.All(r => r.Kind == StatsArtKind.Artist && r.Art?.StartsWith("ar|", StringComparison.Ordinal) == true),
+            $"越听越多按时长：多听不到 1 分钟的不算，配歌手头像（{Rows(riseWeek.Rising.ByTime)}）");
+        // 2/28 那次落在前 7 天里，周杰伦只涨了 1 次，跟 Aimer 打平：现在听得多的排前面
+        rise[0] = Seg(At(2, 28, 20, 0), 300, "晴天", "周杰伦", 1);
+        var partial = StatsReport.Build(rise, now).Ranges[StatsRange.Week];
+        Check(Rows(partial.Rising.ByPlays) == "周杰伦 +1 次、Aimer +1 次"
+              && partial.RisingNote == "记录是从 2 月 28 日才开始的，前 7 天里只有 5 天有记录，涨幅会显得大一些。",
+            $"上一段只有一部分日子有记录：照样比，注明（{partial.RisingNote}）");
+        var cooled = StatsReport.Build(
+        [
+            Seg(At(2, 20, 20, 0), 300, "晴天", "周杰伦", 1),
+            Seg(At(3, 2, 20, 0), 600, "晴天", "周杰伦", 2),
+            Seg(At(3, 9, 20, 0), 300, "晴天", "周杰伦", 1),
+        ], now).Ranges[StatsRange.Week];
+        Check(cooled.Rising.ByPlays.Count == 0 && cooled.Rising.ByTime.Count == 0
+              && cooled.RisingNote == "跟前 7 天比，没有哪位歌手听得更多。",
+            $"谁都没多听：给一句说明（{cooled.RisingNote}）");
+        // 今年比去年同期（2025/1/1–3/11，70 天）；记录从去年开始的，日期带上年份
+        var lastYear = StatsReport.Build(
+        [
+            Seg(new DateTimeOffset(2025, 1, 2, 20, 0, 0, Cst), 300, "晴天", "周杰伦", 1),
+            Seg(At(1, 6, 20, 0), 600, "晴天", "周杰伦", 2),
+        ], now).Ranges[StatsRange.Year];
+        Check(lastYear.Rising.ByPlays is [{ Title: "周杰伦", Right: "+1 次", Sub: "去年同期 1 次 → 2 次" }]
+              && lastYear.RisingNote == "记录是从 2025 年 1 月 2 日才开始的，去年同期里只有 69 天有记录，涨幅会显得大一些。",
+            $"今年比去年同期（{Rows(lastYear.Rising.ByPlays)}，{lastYear.RisingNote}）");
 
         var empty = StatsReport.Build([], now);
         Check(empty.Empty && empty.Facts.Count == 0 && empty.Ranges[StatsRange.All].Songs.ByPlays.Count == 0, "没有记录时是空快照");
+    }
+
+    private static void FunFactTests()
+    {
+        Console.WriteLine("[趣味发现]");
+        var now = SampleNow;
+        // 3/9 是周一。晚上 20:00 起一首接一首，中间切走了一首别人的碎片（不算数、也不打断），
+        // 20:32 停下，隔了 18 分钟才又听，算另一回
+        var sitting = StatsReport.Build(
+        [
+            Seg(At(3, 8, 8, 30), 300, "晴天", "周杰伦", 1),
+            Seg(At(3, 9, 7, 0), 300, "夜曲", "周杰伦", 1),
+            Seg(At(3, 9, 20, 0), 240, "Lemon", "米津玄師", 1),
+            Seg(At(3, 9, 20, 4), 240, "馬と鹿", "米津玄師", 1),
+            Seg(At(3, 9, 20, 8), 5, "Flamingo", "别人"),
+            Seg(At(3, 9, 20, 8).AddSeconds(5), 240, "感電", "米津玄師", 1),
+            Seg(At(3, 9, 20, 20), 240, "打上花火", "DAOKO/米津玄師", 1),
+            Seg(At(3, 9, 20, 24), 240, "Pale Blue", "米津玄師", 1),
+            Seg(At(3, 9, 20, 28), 240, "夜に駆ける", "YOASOBI", 1),
+            Seg(At(3, 9, 20, 50), 300, "Plastic Love", "竹内まりや", 1),
+            // 熬夜熬过了 5 点：5:10 那首当天早就开始听了，不算早起
+            Seg(At(3, 10, 4, 50), 300, "晴天", "周杰伦", 1),
+            Seg(At(3, 10, 5, 10), 300, "夜曲", "周杰伦", 1),
+        ], now).Facts.ToDictionary(x => x.Title);
+        Check(sitting.TryGetValue("一口气听最久", out var marathon) && marathon.Value == "24 分"
+              && marathon.Detail == "3 月 9 日 周一 20:00–20:32，连听了 6 首",
+            $"一口气听最久：停不到 10 分钟算同一回，碎片的时长算、首数不算（{marathon?.Value}，{marathon?.Detail}）");
+        Check(sitting.TryGetValue("连听同一位歌手", out var binge) && binge.Value == "5 首"
+              && binge.Detail == "3 月 9 日 周一，一首接一首全是米津玄師的歌",
+            $"连听同一位歌手：合唱的算进去，切走的碎片不打断（{binge?.Value}，{binge?.Detail}）");
+        Check(sitting.TryGetValue("最早的一次早起", out var early) && early.Value == "早上 7:00"
+              && early.Detail == "3 月 9 日 周一，第一首是《夜曲》",
+            $"早起：取一天第一首在 5~9 点的，熬夜熬过 5 点的不算（{early?.Value}，{early?.Detail}）");
+        Check(!sitting.ContainsKey("久别重逢"), "隔几天又听不算久别重逢");
+
+        // 两份程序同时在记、片段重叠：重叠的那 5 分钟只算一次
+        var overlap = StatsReport.Build(
+            [Seg(At(3, 10, 13, 0), 600, "晴天", "周杰伦", 1), Seg(At(3, 10, 13, 5), 600, "晴天", "周杰伦", 1)], now)
+            .Facts.SingleOrDefault(x => x.Title == "一口气听最久");
+        Check(overlap is { Value: "15 分", Detail: "3 月 10 日 周二 13:00–13:15，一直在听《晴天》" },
+            $"一口气听最久：片段重叠时不超过起止钟点（{overlap?.Value}，{overlap?.Detail}）");
+
+        // 2/25 到 3/10 正好 14 天，每个星期几都赶上两回；晚一天开始就只有 13 天
+        bool HasWeekday(int fromDay) => StatsReport.Build(
+            [Seg(At(2, fromDay, 20, 0), 600, "晴天", "周杰伦", 1), Seg(At(3, 10, 20, 0), 1200, "晴天", "周杰伦", 1)], now)
+            .Facts.Any(x => x is { Title: "最爱星期几", Value: "周二" });
+        Check(HasWeekday(25) && !HasWeekday(26), "最爱星期几：记录满 14 天才比（今天不算）");
+
+        // 3/8 起每 5 分钟换一首，前 3 首没放完就切走了（其中两次是 Lemon），暂停的那次不算换歌
+        var endings = Enumerable.Range(0, 10).Select(i => Seg(At(3, 8, 10, 5 * i), 60,
+            i < 2 ? "Lemon" : $"歌{i}", i < 2 ? "米津玄師" : $"歌手{i}", 1, e: "song", d: 240, pe: i < 3 ? 60 : 235)).ToList();
+        endings.Add(Seg(At(3, 8, 11, 0), 60, "歌10", "歌手10", 1, e: "pause", d: 240, pe: 30));
+        var finish = StatsReport.Build(endings, now).Facts.SingleOrDefault(x => x.Title == "听完率");
+        Check(finish is { Value: "70%", Detail: "中途切走 3 次，最常被切的是《Lemon》" },
+            $"听完率：离结尾 10 秒以内换歌算听完，暂停不算换歌（{finish?.Value}，{finish?.Detail}）");
+        var few = StatsReport.Build(endings.Take(9).ToList(), now).Facts;
+        Check(!few.Any(x => x.Title == "听完率"), "换歌不到 10 次不算听完率");
+
+        var movie = StatsReport.Build([Seg(At(3, 10, 8, 0), 5 * 3600, "晴天", "周杰伦", 1)], now).Facts
+            .SingleOrDefault(x => x.Title == "换算一下");
+        Check(movie is { Value: "2 部电影", Detail: "累计 5 小时，按一部电影 2 小时算" }, $"换算成电影（{movie?.Value}，{movie?.Detail}）");
     }
 
     private static void AlbumTests()
@@ -774,9 +908,8 @@ internal static class StatsSelfTest
         var segs = Sample();
         var y = StatsReport.BuildYear(segs, 2026, now);
         var yr = StatsReport.Build(segs, now).Ranges[StatsRange.Year];
-        Check(Near(y.TotalS, 5230) && y.Plays == 9 && y.Songs == 5 && y.Artists == 3 && y.ActiveDays == 5 && y.Albums == 0
-              && y.NewSongs == null,
-            $"2026 年：{y.TotalS} 秒、{y.Plays} 次、{y.Songs} 首、{y.Artists} 位歌手、{y.ActiveDays} 天，新歌 {y.NewSongs?.ToString() ?? "不算"}（记录今年才开始）");
+        Check(Near(y.TotalS, 5230) && y.Plays == 9 && y.Songs == 5 && y.Artists == 3 && y.ActiveDays == 5 && y.Albums == 0,
+            $"2026 年：{y.TotalS} 秒、{y.Plays} 次、{y.Songs} 首、{y.Artists} 位歌手、{y.ActiveDays} 天");
         Check(Rows(y.TopSongs) == Rows(yr.Songs.ByPlays.Take(5)) && Rows(y.TopArtists) == Rows(yr.Artists.ByPlays.Take(5))
               && y.PeakText == yr.PeakText && y.HeatText == yr.HeatText
               && yr.Summary.StartsWith($"今年你听了 {StatsReport.FormatDuration(y.TotalS)}，播放 {y.Plays} 次，共 {y.Songs} 首歌", StringComparison.Ordinal),
@@ -784,7 +917,8 @@ internal static class StatsSelfTest
         Check(y.Months.Count == 12 && Near(y.Months[0].Value, 600) && Near(y.Months[2].Value, 4630)
               && y.Months.Count(m => m.Highlight) == 1 && y.Months[2].Highlight,
             "12 个月的柱子，听得最多的月份高亮");
-        Check(y.Highlights.Select(h => h.Title).SequenceEqual(["听歌最多的一天", "单日循环纪录", "最晚的一次夜猫子", "最长连续听歌", "这一年的第一首歌"])
+        Check(y.Highlights.Select(h => h.Title).SequenceEqual(["听歌最多的一天", "一口气听最久", "单日循环纪录", "最晚的一次夜猫子", "最长连续听歌",
+                  "久别重逢", "这一年的第一首歌"])
               && y.Highlights[^1] is { Value: "1 月 5 日 周一", Detail: "《晴天》 · 周杰伦" },
             $"亮点（{string.Join("；", y.Highlights.Select(h => $"{h.Title} {h.Value} {h.Detail}"))}）");
         Check(StatsReport.BuildYear(segs, 2025, now).Empty, "没有记录的年份是空报告");
@@ -801,8 +935,10 @@ internal static class StatsSelfTest
         var y26 = StatsReport.BuildYear(cross, 2026, now);
         Check(Near(y25.TotalS, 900) && y25.Plays == 2 && Near(y26.TotalS, 1100) && y26.Plays == 2 && y26.Songs == 3,
             $"跨年夜的片段按钟点拆给两年，次数归开始的那年（2025：{y25.TotalS} 秒 {y25.Plays} 次；2026：{y26.TotalS} 秒 {y26.Plays} 次）");
-        Check(y25.NewSongs == null && y26.NewSongs == 1 && y26.Highlights.Any(h => h is { Title: "新发现", Value: "1 首" }),
-            $"新歌只算这一年第一次听的，跨年夜那首去年就听过了（{y26.NewSongs}）");
+        var back = y26.Highlights.SingleOrDefault(h => h.Title == "久别重逢");
+        Check(back is { Value: "隔了 215 天", Detail: "2025/6/1 之后，1/2 又听起了《晴天》" }
+              && !y26.Highlights.Any(h => h.Title == "一口气听最久") && y25.Highlights.Any(h => h.Title == "一口气听最久"),
+            $"跨年：久别重逢的上一回写上年份，跨年夜那一回归开头那年（{back?.Value}，{back?.Detail}）");
         Check(StatsReport.Years(cross, now).SequenceEqual([2026, 2025]), "Years：新的在前，不含将来的年份");
 
         Check(YearReportWindow.DefaultYear([2026, 2025], new DateTime(2026, 1, 10)) == 2025
@@ -1044,8 +1180,9 @@ internal static class StatsSelfTest
             foreach (var r in v.Artists.ByPlays.Take(5)) Console.WriteLine($"  手 {r.Rank}. {r.Title}（{r.Sub}）  {r.Right}");
             foreach (var r in v.Albums.ByPlays.Take(5)) Console.WriteLine($"  专 {r.Rank}. {r.Title}（{r.Sub}）  {r.Right}");
             if (v.AlbumNote.Length > 0) Console.WriteLine($"  专辑：{v.AlbumNote}");
-            foreach (var r in v.NewSongs.ByPlays.Take(5)) Console.WriteLine($"  新 {r.Rank}. {r.Title} - {r.Sub}  {r.Right}");
-            if (v.NewSongsNote.Length > 0) Console.WriteLine($"  新歌：{v.NewSongsNote}");
+            foreach (var r in v.Rising.ByPlays.Take(5)) Console.WriteLine($"  涨 {r.Rank}. {r.Title}（{r.Sub}）  {r.Right}");
+            foreach (var r in v.Rising.ByTime.Take(5)) Console.WriteLine($"  涨时 {r.Rank}. {r.Title}（{r.Sub}）  {r.Right}");
+            if (v.RisingNote.Length > 0) Console.WriteLine($"  越听越多：{v.RisingNote}");
             foreach (var r in v.Players) Console.WriteLine($"  器 {r.Title}  {r.Right}");
         }
         Console.WriteLine();
@@ -1054,7 +1191,7 @@ internal static class StatsSelfTest
         {
             var y = StatsReport.BuildYear(segs, year, now);
             Console.WriteLine($"\n== {year} 年度报告 ==\n{StatsReport.FormatDuration(y.TotalS)}，播放 {y.Plays} 次，"
-                + $"{y.Songs} 首歌、{y.Artists} 位歌手、{y.Albums} 张专辑，听歌 {y.ActiveDays} 天，新歌 {y.NewSongs?.ToString() ?? "不算"}");
+                + $"{y.Songs} 首歌、{y.Artists} 位歌手、{y.Albums} 张专辑，听歌 {y.ActiveDays} 天");
             foreach (var h in y.Highlights) Console.WriteLine($"  {h.Title}：{h.Value}（{h.Detail}）");
         }
         return 0;
@@ -1160,7 +1297,7 @@ internal static class StatsSelfTest
         var y = StatsReport.BuildYear(segs, year, now);
         var keys = y.TopSongs.Concat(y.TopArtists).Concat(y.TopAlbums)
             .Concat(snap.Ranges.Values.SelectMany(v => v.Songs.ByPlays.Concat(v.Songs.ByTime).Concat(v.Artists.ByPlays)
-                .Concat(v.Artists.ByTime).Concat(v.Albums.ByPlays).Concat(v.Albums.ByTime).Concat(v.NewSongs.ByPlays)))
+                .Concat(v.Artists.ByTime).Concat(v.Albums.ByPlays).Concat(v.Albums.ByTime).Concat(v.Rising.ByPlays)))
             .Select(r => r.Art).OfType<string>().Distinct().ToList();
         for (var i = 0; i < keys.Count; i++)
             if (i % 3 != 2) ArtCache.Save(keys[i], SwatchPng(palette[i % palette.Length], 300, 300));

@@ -45,7 +45,7 @@ internal partial class StatsWindow : Window
 
     /// <summary>首页全部榜单要用的配图（各时间范围、两种排法），从本地缓存读好、冻结，后台线程调用。</summary>
     private static IReadOnlyDictionary<string, ImageSource> LoadArt(StatsSnapshot snap)
-        => LoadArt(snap.Ranges.Values.SelectMany(v => new[] { v.Songs, v.Artists, v.Albums, v.NewSongs })
+        => LoadArt(snap.Ranges.Values.SelectMany(v => new[] { v.Songs, v.Artists, v.Albums, v.Rising })
             .SelectMany(p => p.ByPlays.Concat(p.ByTime)));
 
     internal static IReadOnlyDictionary<string, ImageSource> LoadArt(IEnumerable<StatsRankRow> rows, int px = ArtPx)
@@ -250,8 +250,8 @@ internal partial class StatsWindow : Window
         ArtistList.ItemsSource = Ranks(v.Artists);
         AlbumList.ItemsSource = Ranks(v.Albums);
         AlbumNote.Text = v.AlbumNote;
-        NewSongList.ItemsSource = Ranks(v.NewSongs);
-        NewSongNote.Text = v.NewSongsNote;
+        RisingList.ItemsSource = Ranks(v.Rising);
+        RisingNote.Text = v.RisingNote;
         HourChart.ItemsSource = ToBars(v.Hours);
         PeakText.Text = v.PeakText;
         HeatChart.ItemsSource = ToHeat(v.Heat);
