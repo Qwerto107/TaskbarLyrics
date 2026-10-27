@@ -218,9 +218,20 @@ public static class Updater
         // 所以备份改成先复制一份 .old——新版能跑起来就说明替换成功，由 Cleanup() 删掉
         var tmp = targetExe + ".tmp";
         var backup = targetExe + ".old";
-        // 备份只是给「新版起不来」时手动恢复用的，复制失败不拦替换（原先压根没有备份）
-        try { if (File.Exists(targetExe)) File.Copy(targetExe, backup, true); }
+        // 备份只是给「新版起不来」时手动恢复用的，复制失败不拦替换（原先压根没有备份）。
+        // 复制会把只读属性一起带过去（见 ClearReadOnly），备份前后都得摘：上回留下的只读 .old 覆盖不了，
+        // 这回复制出来的只读 .old 下次启动 Cleanup 删不掉
+        try
+        {
+            if (File.Exists(targetExe))
+            {
+                ClearReadOnly(backup);
+                File.Copy(targetExe, backup, true);
+                ClearReadOnly(backup);
+            }
+        }
         catch (Exception ex) { Log.Error("applyupdate-backup", ex); }
+        ClearReadOnly(targetExe);
         var replaced = false;
         Exception? lastError = null;
         for (var i = 0; i < 10; i++)
@@ -291,7 +302,23 @@ public static class Updater
         if (string.IsNullOrEmpty(self)) return;
         foreach (var leftover in new[] { self + ".old", self + ".tmp" })
         {
+            ClearReadOnly(leftover); // 旧版中继复制出来的 .old 可能带着只读，不摘删不掉
             try { File.Delete(leftover); } catch { /* 占用就留着 */ }
         }
+    }
+
+    /// <summary>摘掉只读属性。微信 4.x 把收到的文件一律标成只读，直接在聊天文件夹里运行的话
+    /// 目标 exe 就是只读的，而改名覆盖（MoveFileEx）碰上只读目标一律拒绝访问，重试多少次都没用。
+    /// 只读是微信护着原件用的，换成新版之后不再加回去：加回去下次更新还是换不上。
+    /// 文件不存在、改不了属性都不管，接下来的复制、改名照常报错</summary>
+    private static void ClearReadOnly(string path)
+    {
+        try
+        {
+            var attrs = File.GetAttributes(path);
+            if ((attrs & FileAttributes.ReadOnly) != 0)
+                File.SetAttributes(path, attrs & ~FileAttributes.ReadOnly);
+        }
+        catch { /* 见上 */ }
     }
 }
