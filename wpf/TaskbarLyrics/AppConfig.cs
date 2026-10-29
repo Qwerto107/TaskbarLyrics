@@ -1,4 +1,4 @@
-// 配置读写：config.json 与 Python 版同 schema（移植自 settings.py），存 exe 同目录。
+// 配置读写：config.json 与 Python 版同 schema（移植自 settings.py），存用户 AppData 目录。
 using System.IO;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -60,14 +60,13 @@ public sealed class AppConfig
     // 保留 Python 版里未知的扩展键，存盘时不丢
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
-    /// <summary>当前使用的配置文件路径。首选 exe 同目录（便携、删掉即恢复默认），
-    /// 那里写不进去时会切到 <see cref="FallbackPath"/>。</summary>
-    public static string ConfigPath { get; private set; } = PrimaryPath;
+    /// <summary>配置固定存用户目录，切换程序位置时仍共用同一份设置。</summary>
+    public static string ConfigPath => FallbackPath;
 
-    /// <summary>首选位置：exe 同目录。</summary>
+    /// <summary>旧版配置位置，仅用于迁移和查找旧统计。</summary>
     internal static string PrimaryPath => Path.Combine(AppContext.BaseDirectory, "config.json");
 
-    /// <summary>exe 同目录只读时（装在 Program Files、或从只读介质运行）的退路。</summary>
+    /// <summary>用户配置位置，保留原属性名供旧数据目录查找使用。</summary>
     internal static string FallbackPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "TaskbarLyrics", "config.json");
@@ -78,50 +77,18 @@ public sealed class AppConfig
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, // 对应 Python ensure_ascii=False
     };
 
-    /// <summary>读配置。两处（exe 同目录 / %AppData% 退路）都可能有内容，
-    /// 取较新的那份；它坏了再退到另一份。<see cref="ConfigPath"/> 随之定下，
-    /// 之后的存盘就写这一处。</summary>
+    /// <summary>优先读用户配置；没有有效配置时迁移 exe 旁的旧配置，保留旧文件。
+    /// 迁移写入失败时仍使用读到的设置，之后存盘继续尝试用户目录。</summary>
     public static AppConfig Load()
     {
-        var first = PickReadPath();
-        var second = first == PrimaryPath ? FallbackPath : PrimaryPath;
-        if (TryLoadFrom(first, out var cfg)) { ConfigPath = first; return cfg; }
-        // 首选那份坏了（已被隔离成 .bad），另一处哪怕旧一点也比全默认值强
-        if (TryLoadFrom(second, out cfg)) { ConfigPath = second; return cfg; }
-        // 两处都没有（首次运行）或都坏了：用默认值，并按便携优先写回 exe 同目录，
-        // 那里写不进去时 Save 会自己切到退路。设置全是默认值，也就当新用户带一遍引导
-        ConfigPath = PrimaryPath;
+        if (TryLoadFrom(ConfigPath, out var cfg)) return cfg;
+        if (TryLoadFrom(PrimaryPath, out cfg))
+        {
+            cfg.Save();
+            return cfg;
+        }
+        // 两处都没有有效配置时按首次运行处理。
         return new AppConfig { ShowGuide = true };
-    }
-
-    /// <summary>决定这次从哪读。
-    ///
-    /// 必须比较两处的新旧，不能固定优先 exe 同目录：Save 在 exe 同目录写不进去时
-    /// 会转存 %AppData%，而原先的 Load 只在 exe 同目录「不存在」文件时才看退路。
-    /// 读写规则一不对称，存进去的和读回来的就不是同一个文件——现象是
-    /// 「设置改完当场生效、电脑重启后又变回旧值」，而且全程不留痕迹
-    /// （转存退路成功时不提示，写失败的日志也只记第一次）。
-    ///
-    /// 触发它不需要权限长期不足：OneDrive 同步、杀软扫描、备份工具短暂锁住
-    /// config.json 就够了。而 ConfigPath 一旦切到退路，本次运行就不再回头试
-    /// exe 同目录，于是那一次抖动之后的所有改动都注定在重启时丢失。</summary>
-    private static string PickReadPath()
-    {
-        var primary = PrimaryPath;
-        var fallback = FallbackPath;
-        try
-        {
-            var ff = new FileInfo(fallback);
-            if (!ff.Exists) return primary;
-            var pf = new FileInfo(primary);
-            if (!pf.Exists) return fallback;
-            // 都有：谁新用谁。一样新时选 exe 同目录，保持便携语义
-            return ff.LastWriteTimeUtc > pf.LastWriteTimeUtc ? fallback : primary;
-        }
-        catch
-        {
-            return primary; // 取不到时间戳（路径异常）就按首选来
-        }
     }
 
     /// <summary>试着从一处读。文件不存在返回 false（不算故障）；
@@ -163,33 +130,15 @@ public sealed class AppConfig
 
     private static bool _writeLogged;
 
-    // 存盘串行化。UI 线程（拖动松手、菜单、设置页）和后台线程（启动时检查更新写时间戳）
-    // 都会存盘，原先两边共用同一个 .tmp 且不加锁：一边在写、另一边抢着改名，轻则 IOException
-    // 丢掉一次写入，重则这次失败被当成「exe 同目录写不进去」，配置从此转存到 %AppData%。
-    // 用静态锁：ConfigPath 是静态的，转存退路的那次切换也得在锁里完成
+    // UI 线程和后台线程都可能存盘，用静态锁保护同一配置文件的写入。
     private static readonly object SaveLock = new();
 
-    /// <summary>存盘，返回是否成功（连退路都写不进去才算失败，调用方据此提示一次）。
-    ///
-    /// 原先整体吞掉异常：exe 装在 Program Files 之类只读位置时，设置在内存里当场生效、
-    /// 一重启全丢，而且没有任何提示。现在先试 exe 同目录，不行就改存 %AppData%。</summary>
+    /// <summary>存到用户目录，返回是否成功，调用方据此提示一次。</summary>
     public bool Save()
     {
         lock (SaveLock)
         {
-            if (TryWrite(ConfigPath)) return true;
-            var fallback = FallbackPath;
-            if (!string.Equals(ConfigPath, fallback, StringComparison.OrdinalIgnoreCase)
-                && TryWrite(fallback))
-            {
-                // 留一条：这条路以前完全静默，而它意味着配置从此存在 %AppData%，
-                // 用户以为「删掉 exe 同目录的 config.json 就恢复默认」时会对不上账。
-                // 不弹窗——设置确实存住了，功能正常，Load 现在也会跟着读较新的那份
-                Log.Note("config-save", $"exe 同目录写不进去，配置已转存到 {fallback}");
-                ConfigPath = fallback; // 之后一直用退路，下次 Load 也会从那里读
-                return true;
-            }
-            return false;
+            return TryWrite(ConfigPath);
         }
     }
 
