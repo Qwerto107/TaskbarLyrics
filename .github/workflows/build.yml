@@ -22,7 +22,7 @@ jobs:
       - name: 编译
         run: dotnet build wpf/TaskbarLyrics -c Release
 
-      # 与 README / 发布用的命令保持一致：框架依赖单文件（不自包含，约 25MB→2MB）
+      # 与 README / 发布用的命令保持一致：框架依赖单文件，包含 Skia 原生库，不自包含 .NET。
       - name: 打包
         run: >
           dotnet publish wpf/TaskbarLyrics -c Release -r win-x64

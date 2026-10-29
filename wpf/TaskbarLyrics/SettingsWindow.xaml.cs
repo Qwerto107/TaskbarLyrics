@@ -20,6 +20,9 @@ public partial class SettingsWindow : Window
     {
         _app = app;
         InitializeComponent();
+        SkiaTextBlock.SetRenderer(this, Cfg.SettingsRenderer);
+        TextOptions.SetTextFormattingMode(this,
+            Cfg.SettingsRenderer == "wpf" ? TextFormattingMode.Ideal : TextFormattingMode.Display);
         NavList.ItemsSource = new[]
         {
             new NavItem("\uE713", "通用"),
@@ -112,6 +115,10 @@ public partial class SettingsWindow : Window
         FontCombo.Text = cfg.FontFamily;
         FontSizeBox.Text = cfg.FontSize.ToString();
         FontBoldSwitch.IsChecked = cfg.FontBold;
+        LyricsRendererCombo.SelectedIndex = cfg.LyricsRenderer == "wpf" ? 1 : 0;
+        SettingsRendererCombo.SelectedIndex = cfg.SettingsRenderer == "wpf" ? 1 : 0;
+        LyricsHintingCombo.SelectedIndex = HintingIndex(cfg.LyricsHinting);
+        SettingsHintingCombo.SelectedIndex = HintingIndex(cfg.SettingsHinting);
         AlignCombo.SelectedIndex = cfg.TextAlign == "left" ? 1 : 0;
         WidthCombo.Text = cfg.Width.ToString();
         TextColorBox.Text = cfg.TextColor;
@@ -122,6 +129,7 @@ public partial class SettingsWindow : Window
         ShowControlsSwitch.IsChecked = cfg.ShowControls;
         UpdateSwatches();
         UpdateColorEnabled();
+        SkiaTextBlock.ApplyHinting(this, cfg.SettingsHinting);
     }
 
     /// <summary>跟随系统时把颜色输入框和预设色块置灰：留着能点却不生效最气人。</summary>
@@ -167,15 +175,24 @@ public partial class SettingsWindow : Window
 
     private void ColorBox_TextChanged(object sender, TextChangedEventArgs e) => UpdateSwatches();
 
+    private static int HintingIndex(string value) => value switch { "none" => 0, "slight" => 1, "full" => 3, _ => 2 };
+
+    private void RendererCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (LyricsHintingCombo != null) LyricsHintingCombo.IsEnabled = LyricsRendererCombo.SelectedIndex != 1;
+        if (SettingsHintingCombo != null) SettingsHintingCombo.IsEnabled = SettingsRendererCombo.SelectedIndex != 1;
+    }
     private static readonly string[] SecondLineValues = { "translation", "romaji", "off" };
     private static readonly string[] SourceValues = { "auto", "netease", "others" };
+    private static readonly string[] RendererValues = { "skia", "wpf" };
+    private static readonly string[] HintingValues = { "none", "slight", "normal", "full" };
 
     /// <summary>窗口里各项控件的原样取值（下拉框序号、开关状态、输入框原文，不做校验）。</summary>
     private sealed record FormValues(
         int Mode, int Monitor, bool HideOnFullscreen, bool AutoPosition, int AutoSide, int AutoAlign,
         bool Locked, bool UpdateCheck, bool StatsEnabled, bool StatsImages,
         int SecondLine, bool Karaoke, string Offset, int Source,
-        string Font, string FontSize, bool FontBold, int Align, string Width,
+        string Font, string FontSize, bool FontBold, int LyricsRenderer, int SettingsRenderer, int LyricsHinting, int SettingsHinting, int Align, string Width,
         int ColorMode, string TextColor, string TransColor, bool Shadow, bool ShowCover, bool ShowControls);
 
     /// <summary>窗口打开时（或上次应用成功时）各控件的取值，Apply 拿它判断哪些项用户动过。</summary>
@@ -189,6 +206,8 @@ public partial class SettingsWindow : Window
         SecondLineCombo.SelectedIndex, KaraokeSwitch.IsChecked == true, OffsetBox.Text,
         SourceCombo.SelectedIndex,
         FontCombo.Text, FontSizeBox.Text, FontBoldSwitch.IsChecked == true,
+        LyricsRendererCombo.SelectedIndex, SettingsRendererCombo.SelectedIndex,
+        LyricsHintingCombo.SelectedIndex, SettingsHintingCombo.SelectedIndex,
         AlignCombo.SelectedIndex, WidthCombo.Text,
         ColorModeCombo.SelectedIndex, TextColorBox.Text, TransColorBox.Text,
         ShadowSwitch.IsChecked == true, ShowCoverSwitch.IsChecked == true, ShowControlsSwitch.IsChecked == true);
@@ -260,6 +279,14 @@ public partial class SettingsWindow : Window
         if (now.Font != was.Font && family.Length > 0) cfg.FontFamily = family;
         if (now.FontSize != was.FontSize) cfg.FontSize = fontSize;
         if (now.FontBold != was.FontBold) cfg.FontBold = now.FontBold;
+        if (now.LyricsRenderer != was.LyricsRenderer)
+            cfg.LyricsRenderer = RendererValues[Math.Clamp(now.LyricsRenderer, 0, 1)];
+        if (now.SettingsRenderer != was.SettingsRenderer)
+            cfg.SettingsRenderer = RendererValues[Math.Clamp(now.SettingsRenderer, 0, 1)];
+        if (now.LyricsHinting != was.LyricsHinting)
+            cfg.LyricsHinting = HintingValues[Math.Clamp(now.LyricsHinting, 0, 3)];
+        if (now.SettingsHinting != was.SettingsHinting)
+            cfg.SettingsHinting = HintingValues[Math.Clamp(now.SettingsHinting, 0, 3)];
         if (now.Width != was.Width) cfg.Width = width;
         if (now.Align != was.Align) cfg.TextAlign = now.Align == 1 ? "left" : "center";
         if (now.ColorMode != was.ColorMode) cfg.TextColorMode = customColor ? "custom" : "auto";
@@ -280,6 +307,7 @@ public partial class SettingsWindow : Window
         if (now.Locked != was.Locked) _app.SetLocked(now.Locked);
         _app.SetAutostart(AutostartSwitch.IsChecked == true);
         _app.SaveCfg();
+        SkiaTextBlock.ApplyHinting(this, cfg.SettingsHinting);
         _app.ApplySettings(refetchLyrics: secondLineChanged || karaokeChanged);
         // 统计窗开着的话按新设置重画：关掉配图就撤图，打开就把本机已存的图配上
         if (now.StatsImages != was.StatsImages) _app.RefreshStatsWindow();

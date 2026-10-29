@@ -1,4 +1,4 @@
-// 逐字歌词控件：暗色 TextBlock（底层，未唱）+ 亮色 TextBlock（上层，唱过），
+// 逐字歌词控件：暗色 Skia 文字层（底层，未唱）+ 亮色 Skia 文字层（上层，唱过），
 // 上层用 Clip 矩形裁剪。PositionMs 依赖属性由 Storyboard 按逐字时间戳驱动，
 // OnPropertyChanged 时按「唱过的字全亮 + 正在唱的字按比例」重算 Clip 边界
 // （对应 Python render.py 的 _karaoke_boundary_x）。
@@ -343,7 +343,7 @@ public abstract class ScrollingTextHost : NaturalMeasureGrid
     /// 淡出中的行会横向跳一下。走马灯是属性动画，由渲染线程独立插值，不占 UI 线程。</summary>
     public void FreezeScroll() => StopFollowing();
 
-    /// <summary>文本本体（TextBlock）在 ancestor 坐标系里的包围盒；还没排版、不在其下时返回 Rect.Empty。
+    /// <summary>文本本体（Skia 文字层）在 ancestor 坐标系里的包围盒；还没排版、不在其下时返回 Rect.Empty。
     /// 供传送带切行的共享句形变量起止位置（见 OverlayWindow.AddMorph），已含本元素的滚动位移。</summary>
     public Rect TextBounds(Visual ancestor)
     {
@@ -353,10 +353,10 @@ public abstract class ScrollingTextHost : NaturalMeasureGrid
         return Rect.Empty;
     }
 
-    /// <summary>给文本本体挂一个形变：先按 (scaleX, scaleY) 缩放、再平移 (x, y)，坐标系是 TextBlock 自己的。
+    /// <summary>给文本本体挂一个形变：先按 (scaleX, scaleY) 缩放、再平移 (x, y)，坐标系是文字层自己的。
     /// 各文本层（逐字的暗/亮两层）共享同一个变换，返回其中一个作动画目标，动它即全部跟着动。
     ///
-    /// 挂在内部 TextBlock 上而不是本元素：本元素的 RenderTransform 归横向滚动所有，
+    /// 挂在内部文字层上而不是本元素：本元素的 RenderTransform 归横向滚动所有，
     /// RefreshOverflow 会把它整个清掉、走马灯要接管它的 X。亮层的高亮 Clip 在局部坐标里，
     /// 随变换一起缩放，不用另算。</summary>
     public FrameworkElement ApplyMorph(double scaleX, double scaleY, double x, double y)
@@ -389,8 +389,8 @@ public sealed class KaraokeText : ScrollingTextHost
     /// <summary>正在唱的位置在视口中保持的位置（对标 Lyricify，约 1/3 处）。</summary>
     private const double FocusRatio = 0.35;
 
-    private readonly TextBlock _pending;
-    private readonly TextBlock _accent;
+    private readonly SkiaTextBlock _pending;
+    private readonly SkiaTextBlock _accent;
     /// <summary>高亮裁剪矩形：只改 Rect 不重建，避免逐帧产生新几何对象。</summary>
     private readonly RectangleGeometry _accentClip = new(new Rect(0, -1000, 0, 12000));
     private IReadOnlyList<KaraokeWord>? _words;
@@ -420,9 +420,10 @@ public sealed class KaraokeText : ScrollingTextHost
         _accent = MakeBlock();
         Children.Add(_pending);
         Children.Add(_accent);
+        Loaded += (_, _) => RefreshTextMetrics();
     }
 
-    private static TextBlock MakeBlock() => new()
+    private static SkiaTextBlock MakeBlock() => new()
     {
         HorizontalAlignment = HorizontalAlignment.Center,
         VerticalAlignment = VerticalAlignment.Center,
@@ -431,8 +432,11 @@ public sealed class KaraokeText : ScrollingTextHost
     /// <summary>设置一行歌词。words 为 null 时整行常亮（无逐字数据）。</summary>
     public void SetLine(string text, IReadOnlyList<KaraokeWord>? words, FontFamily family, double fontSizeDip,
         Brush bright, Brush pending, bool shadow, bool blackShadow,
-        HorizontalAlignment align = HorizontalAlignment.Center, FontWeight? weight = null)
+        HorizontalAlignment align = HorizontalAlignment.Center, FontWeight? weight = null,
+        TextFormattingMode formattingMode = TextFormattingMode.Display)
     {
+        // 建行时尚未加入窗口，先显式设定排版模式，保证首次测量与入树后的渲染一致。
+        TextOptions.SetTextFormattingMode(this, formattingMode);
         _text = text;
         _words = words;
         _targetFontSize = fontSizeDip;
@@ -452,45 +456,53 @@ public sealed class KaraokeText : ScrollingTextHost
         var lh = Math.Ceiling(fontSizeDip * 1.3);
         _pending.LineHeight = lh;
         _accent.LineHeight = lh;
-        _pending.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
-        _accent.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
-        // 阴影挂在 TextBlock 上而非整格：滚动时文本超出容器宽度，
-        // 容器级 Effect 会把超出部分先裁进位图，尾部看不到。
+        // 阴影由 Skia 文字层绘制，避免 WPF Effect 对正文再次光栅化。
         // 粗笔画配大半径阴影会糊成毛边，加粗时换更轻的影子
         var bold = _targetWeight >= FontWeights.SemiBold;
         var effect = shadow ? TextShadow.For(bold, blackShadow) : null;
-        _pending.Effect = effect;
-        _accent.Effect = effect;
+        _pending.TextShadow = effect;
+        _accent.TextShadow = effect;
         _pending.Visibility = words != null ? Visibility.Visible : Visibility.Collapsed;
         _accent.Clip = null;
         _needSnap = true; // 从中途接上播放时，滚动位置直接到位，不从行首缓滚一段
-        RebuildWordWidths(_targetFontSize);
-        // 不给 TextBlock 显式 Width：父容器已让文本按自然宽度排版并溢出渲染，
+        // 不给文字层显式 Width：父容器已让文本按自然宽度排版并溢出渲染，
         // 而显式宽度只能取自测量值——与真实排版宽度的任何偏差都会变成尾部被裁或右侧空隙
+        RefreshTextMetrics();
+    }
+
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        RefreshTextMetrics();
+    }
+
+    private void RefreshTextMetrics()
+    {
+        // 入树和换屏后使用实际 DPI，避免位图已更新但逐字边界仍按旧 DPI 测量。
+        RebuildWordWidths(_targetFontSize);
         SetNaturalWidth(MeasureWidth(_text, _targetFontSize));
         UpdateClip();
     }
 
     private double MeasureWidth(string text, double fontSize)
-        => MeasureTextWidth(text, _accent.FontFamily, fontSize, DpiScale(), _targetWeight);
+        => MeasureTextWidth(text, _accent.FontFamily, fontSize, DpiScale(), _targetWeight,
+            TextOptions.GetTextFormattingMode(this));
 
     /// <summary>测量任意文本宽度（供译文行与窗口紧凑布局用）。
     ///
-    /// 排版模式必须与渲染一致：应用里文字渲染是 TextFormattingMode.Display
-    /// （OverlayWindow.xaml 的 Root 上设置，可继承），而 FormattedText 默认用 Ideal。
-    /// Ideal 按亚像素精度排版，实测比 Display 的真实排版宽度大 8~17px（越长越大），
-    /// 这段虚高会同时污染滚动距离、逐字高亮边界（误差随前缀累积）和窗口宽度。
-    /// Display 模式量化到整像素，测出的宽度与 TextBlock 实际排版宽度完全一致。
+    /// 排版模式必须与当前渲染方案一致：Ideal 按亚像素精度排版，Display 按像素对齐。
+    /// 混用会污染滚动距离、逐字高亮边界（误差随前缀累积）和窗口宽度。
     ///
     /// 字重也必须与实际渲染一致：雅黑 Bold 比 Regular 宽一截，按细字测量会导致
     /// 窗口定窄（粗字超框）、滚动不触发（以为没超）、逐字边界错位。</summary>
     public static double MeasureTextWidth(string text, FontFamily family, double fontSize,
-        double pixelsPerDip, FontWeight? weight = null)
+        double pixelsPerDip, FontWeight? weight = null,
+        TextFormattingMode formattingMode = TextFormattingMode.Display)
     {
         if (text.Length == 0) return 0;
         var ft = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
             new Typeface(family, FontStyles.Normal, weight ?? FontWeights.Normal, FontStretches.Normal),
-            fontSize, Brushes.Black, null, TextFormattingMode.Display, pixelsPerDip);
+            fontSize, Brushes.Black, null, formattingMode, pixelsPerDip);
         return ft.WidthIncludingTrailingWhitespace;
     }
 
@@ -590,26 +602,29 @@ public sealed class KaraokeText : ScrollingTextHost
 /// 原文有逐字数据时按原文进度比例同步滚动，否则走马灯兜底。</summary>
 public sealed class TranslationText : ScrollingTextHost
 {
-    private readonly TextBlock _tb;
+    private readonly SkiaTextBlock _tb;
     private HorizontalAlignment _align = HorizontalAlignment.Center;
     private bool _followProgress;
     private bool _needSnap = true;
 
     public TranslationText()
     {
-        _tb = new TextBlock
+        _tb = new SkiaTextBlock
         {
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
         Children.Add(_tb);
+        Loaded += (_, _) => RefreshTextMetrics();
     }
 
     /// <summary>设置第二行文本。followProgress=true 时不启走马灯，
     /// 改由 ScrollToFraction 跟随原文逐字进度。</summary>
     public void SetText(string text, FontFamily family, double fontSizeDip, Brush foreground,
-        bool shadow, bool blackShadow, HorizontalAlignment align, bool followProgress)
+        bool shadow, bool blackShadow, HorizontalAlignment align, bool followProgress,
+        TextFormattingMode formattingMode = TextFormattingMode.Display)
     {
+        TextOptions.SetTextFormattingMode(this, formattingMode);
         _align = align;
         _followProgress = followProgress;
         _needSnap = true;
@@ -618,11 +633,20 @@ public sealed class TranslationText : ScrollingTextHost
         _tb.FontSize = fontSizeDip;
         _tb.Foreground = foreground;
         _tb.LineHeight = Math.Ceiling(fontSizeDip * 1.3); // 与原文同规则固定行高，保留行间距
-        _tb.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
-        // 小字号用更轻的阴影，避免发虚；同样挂在 TextBlock 上（容器级会裁掉滚动尾部）
-        _tb.Effect = shadow ? TextShadow.Second(blackShadow) : null;
-        SetNaturalWidth(KaraokeText.MeasureTextWidth(text, family, fontSizeDip, DpiScale()));
+        // 小字号用更轻的 Skia 阴影，正文保持独立绘制。
+        _tb.TextShadow = shadow ? TextShadow.Second(blackShadow) : null;
+        RefreshTextMetrics();
     }
+
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        RefreshTextMetrics();
+    }
+
+    private void RefreshTextMetrics() => SetNaturalWidth(KaraokeText.MeasureTextWidth(
+        _tb.Text, _tb.FontFamily, _tb.FontSize, DpiScale(),
+        formattingMode: TextOptions.GetTextFormattingMode(this)));
 
     protected override void OnOverflowChanged(bool overflowing)
     {

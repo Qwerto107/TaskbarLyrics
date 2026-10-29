@@ -1,6 +1,7 @@
 <Window x:Class="TaskbarLyrics.OverlayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:TaskbarLyrics"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" ShowActivated="False" ResizeMode="NoResize"
         Visibility="Hidden" SizeToContent="Manual" Width="560" Height="40">
@@ -32,12 +33,10 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <!-- 清晰度：分层（透明）窗口默认回退灰阶抗锯齿会发虚，
-         ClearTypeHint 强制 ClearType（背景为不透明的任务栏，不会产生色边），
-         TextFormattingMode=Display + UseLayoutRounding 让文字对齐物理像素 -->
-        <Grid x:Name="Root"
+    <!-- 歌词与媒体信息使用 Skia 抗锯齿；固定 Display 排版供测量和逐字裁剪共用。 -->
+    <Grid x:Name="Root"
           TextOptions.TextFormattingMode="Display"
-          RenderOptions.ClearTypeHint="Enabled"
+          TextOptions.TextRenderingMode="Grayscale"
           UseLayoutRounding="True">
         <!-- 浮动模式底色：半透明深色圆角底（仅浮动模式显示），
              遮住分层窗逐帧重绘的闪烁感，也让整个条可拖动（不再只能抓文字） -->
@@ -71,8 +70,8 @@
         <StackPanel x:Name="InfoPanel" HorizontalAlignment="Left" VerticalAlignment="Center"
                     Opacity="0" IsHitTestVisible="False">
             <StackPanel.RenderTransform><TranslateTransform/></StackPanel.RenderTransform>
-            <TextBlock x:Name="TitleText" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <TextBlock x:Name="ArtistText" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            <local:SkiaTextBlock x:Name="TitleText" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            <local:SkiaTextBlock x:Name="ArtistText" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </StackPanel>
         <!-- 播放控制按钮：悬停时在封面右侧露出来，内容层同时右移让出这 96 的位置。
              裁剪框右缘跟着内容层左缘走（见 UpdateDisplayMode），像抽屉拉开，

@@ -13,6 +13,10 @@ public sealed class AppConfig
     [JsonPropertyName("font_family")] public string FontFamily { get; set; } = "Microsoft YaHei UI";
     [JsonPropertyName("font_size")] public int FontSize { get; set; } = 12;            // 原文字号
     [JsonPropertyName("font_bold")] public bool FontBold { get; set; }               // 原文半粗（译文保持常规）
+    [JsonPropertyName("lyrics_renderer")] public string LyricsRenderer { get; set; } = "skia"; // skia | wpf
+    [JsonPropertyName("settings_renderer")] public string SettingsRenderer { get; set; } = "skia";
+    [JsonPropertyName("lyrics_hinting")] public string LyricsHinting { get; set; } = "normal"; // none | slight | normal | full
+    [JsonPropertyName("settings_hinting")] public string SettingsHinting { get; set; } = "normal";
     // auto：跟随系统任务栏明暗自动取色（深色任务栏白字、浅色任务栏近黑字）；
     // custom：用下面两个 hex。默认 auto——浅色任务栏上白字几乎看不见，
     // 而绝大多数人不会主动去设置里改颜色，默认就得是对的
@@ -114,6 +118,15 @@ public sealed class AppConfig
                     ? "translation" : "off";
             }
             node.Remove("show_translation");
+            // 旧的 WPF 渲染选项已由 Skia Hinting 替代，不作为扩展键继续写回。
+            node.Remove("text_rendering");
+            // 共用 Hinting 拆成歌词和设置窗口两份，已有独立配置时不覆盖。
+            if (node.TryGetPropertyValue("font_hinting", out var hinting))
+            {
+                if (!node.ContainsKey("lyrics_hinting")) node["lyrics_hinting"] = hinting?.DeepClone();
+                if (!node.ContainsKey("settings_hinting")) node["settings_hinting"] = hinting?.DeepClone();
+                node.Remove("font_hinting");
+            }
             cfg = node.Deserialize<AppConfig>()
                 ?? throw new InvalidDataException("配置反序列化结果为空");
             return true;

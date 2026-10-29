@@ -35,6 +35,7 @@
 - 专辑封面
 - 过滤作词、作曲这类制作信息
 - 文字颜色跟随系统深浅色，也可以自定义
+- 歌词条和设置窗口可分别选择 SkiaSharp 或原始 WPF 文字绘制，并独立调整 Hinting
 - 居中或左对齐
 - 全屏时自动隐藏
 - 单曲循环时歌词会重新开始
@@ -48,6 +49,10 @@
 - 托盘图标
 
 设置固定保存在 `%AppData%\TaskbarLyrics\config.json`，切换程序位置时共用这份配置。用户目录没有有效配置时，会自动迁移 exe 旁边的旧 `config.json`，并保留旧文件。要恢复默认设置，先退出程序，再删除用户目录和 exe 旁边的 `config.json`。
+
+在“设置 → 外观”中，歌词条和设置窗口可分别选择 SkiaSharp（默认）或 WPF（原始）。歌词引擎点击“应用”后生效，歌名和歌手信息一起切换；设置窗口的引擎保存后，重新打开设置窗口生效。WPF 模式使用原生 TextBlock，SkiaSharp 模式使用 Skia 绘制字形。两种模式共用排版、字体回退和交互逻辑。输入框保留原生文字编辑，支持光标、选区和中文输入法。
+
+歌词和窗口的字形对齐（Hinting）也分开保存，可选关闭、轻度、标准或完整，默认标准。对应引擎为 SkiaSharp 时可调整，WPF 模式下选项置灰并保留原值。旧版共用的 Hinting 会迁移到两边。关闭时保留字形轮廓，完整对齐更强调像素边界；实际差异取决于字体、字号和显示缩放。
 
 听歌统计记在 `%AppData%\TaskbarLyrics\stats` 文件夹里，一个月一个文件，只存在本机，不上传。设置里可以关掉记录，也可以一键清空。每段记录有：开始时间和时区、听了多久、歌名、歌手、播放器，以及播放器报了的专辑、专辑歌手、曲目号、流派、随机 / 循环模式、歌曲时长和播放进度、这段为什么结束（暂停、切歌之类），还有歌词库里匹配到的歌曲 id 和专辑。
 
@@ -97,6 +102,7 @@ wpf/publish/TaskbarLyrics.exe --stats-test [report | shot <目录> [real]]
 | `Lyrics.cs` | 抓歌词、选版本、对齐译文和逐字时间 |
 | `LyricsCache.cs` | 歌词缓存 |
 | `OverlayWindow.xaml(.cs)` | 歌词显示和动画 |
+| `SkiaTextBlock.cs` | Skia 文字绘制、阴影和 DPI 位图缓存 |
 | `NativeMethods.cs` | 挂进任务栏、置顶、鼠标穿透 |
 | `TaskbarFreeSpace.cs` | 计算任务栏上的空位 |
 | `SettingsWindow.xaml(.cs)` / `TrayIcon.cs` / `AppConfig.cs` | 设置、托盘、配置 |

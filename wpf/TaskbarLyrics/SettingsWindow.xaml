@@ -1,6 +1,7 @@
 <Window x:Class="TaskbarLyrics.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:TaskbarLyrics"
         Title="任务栏歌词 - 设置" Width="820" Height="660" MinWidth="720" MinHeight="540"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResizeWithGrip"
         Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
@@ -8,6 +9,21 @@
          多选项统一用下拉框（不会再横向溢出），布尔项用开关（ToggleSwitch）。
          背景/控件样式交给 App.xaml 的 Fluent 主题（跟随系统明暗）。 -->
     <Window.Resources>
+        <Style TargetType="local:SkiaTextBlock">
+            <Setter Property="FontFamily" Value="{x:Static SystemFonts.MessageFontFamily}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+        </Style>
+        <!-- 内容模板只替换文字绘制，按钮和下拉框仍使用原有布局、交互和主题。 -->
+        <DataTemplate x:Key="SkiaContent">
+            <local:SkiaTextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"
+                FontFamily="{Binding Path=(TextElement.FontFamily), RelativeSource={RelativeSource AncestorType=ContentPresenter}}"
+                FontSize="{Binding Path=(TextElement.FontSize), RelativeSource={RelativeSource AncestorType=ContentPresenter}}"
+                Foreground="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource AncestorType=ContentPresenter}}"/>
+        </DataTemplate>
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="ContentTemplate" Value="{StaticResource SkiaContent}"/>
+        </Style>
         <!-- 配色一律取 Fluent 主题自带的自适应资源（TextFillColor* / *FillColor* / *StrokeColor*），
              它们随 ThemeMode 明暗切换。这里绝不能用 SystemColors.*：那是 Win32 经典系统色，
              实测在 Light/Dark 下取值完全相同（WindowBrush 恒白、ControlTextBrush 恒黑、
@@ -16,13 +32,14 @@
         <!-- Win11 式下拉项：圆角药丸悬停 + 选中对勾（而非左侧竖条） -->
         <Style TargetType="ComboBoxItem">
             <Setter Property="Padding" Value="0"/>
+            <Setter Property="ContentTemplate" Value="{StaticResource SkiaContent}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBoxItem">
                         <Border x:Name="ItemBg" CornerRadius="4" Margin="1"
                                 Background="Transparent" Padding="8,0">
                             <Grid MinHeight="28">
-                                <TextBlock x:Name="Check" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets"
+                                <local:SkiaTextBlock x:Name="Check" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets"
                                            FontSize="11" VerticalAlignment="Center" Visibility="Collapsed"
                                            Foreground="{DynamicResource AccentFillColorDefaultBrush}"/>
                                 <ContentPresenter Margin="22,0,0,0" VerticalAlignment="Center"/>
@@ -63,7 +80,7 @@
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="30"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="1" Text="&#xE70D;"
+                                                <local:SkiaTextBlock Grid.Column="1" Text="&#xE70D;"
                                                            FontFamily="Segoe MDL2 Assets" FontSize="12"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
                                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
@@ -83,7 +100,7 @@
                             </ToggleButton>
                             <ContentPresenter x:Name="ContentSite"
                                               Content="{TemplateBinding SelectionBoxItem}"
-                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplate="{StaticResource SkiaContent}"
                                               ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
                                               Margin="11,0,30,0" VerticalAlignment="Center"
                                               IsHitTestVisible="False"
@@ -96,7 +113,9 @@
                                      CaretBrush="{DynamicResource TextFillColorPrimaryBrush}"/>
                             <Popup x:Name="PART_Popup" Placement="Bottom"
                                    IsOpen="{TemplateBinding IsDropDownOpen}"
-                                   AllowsTransparency="True" PopupAnimation="Fade" VerticalOffset="4">
+                                   AllowsTransparency="True" PopupAnimation="Fade" VerticalOffset="4"
+                                   local:SkiaTextBlock.Hinting="{Binding Path=(local:SkiaTextBlock.Hinting), RelativeSource={RelativeSource TemplatedParent}}"
+                                   local:SkiaTextBlock.Renderer="{Binding Path=(local:SkiaTextBlock.Renderer), RelativeSource={RelativeSource TemplatedParent}}">
                                 <Border CornerRadius="8" Padding="5,4"
                                         Background="{DynamicResource ControlSolidFillColorDefaultBrush}"
                                         BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1"
@@ -231,11 +250,11 @@
         <Style x:Key="Row" TargetType="Grid">
             <Setter Property="Margin" Value="0,9"/>
         </Style>
-        <Style x:Key="RowTitle" TargetType="TextBlock">
+        <Style x:Key="RowTitle" TargetType="local:SkiaTextBlock">
             <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
             <Setter Property="FontSize" Value="13"/>
         </Style>
-        <Style x:Key="RowDesc" TargetType="TextBlock">
+        <Style x:Key="RowDesc" TargetType="local:SkiaTextBlock">
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="Margin" Value="0,3,0,0"/>
@@ -245,13 +264,13 @@
             <Setter Property="Height" Value="1"/>
             <Setter Property="Background" Value="{DynamicResource DividerStrokeColorDefaultBrush}"/>
         </Style>
-        <Style x:Key="CardHeader" TargetType="TextBlock">
+        <Style x:Key="CardHeader" TargetType="local:SkiaTextBlock">
             <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Margin" Value="4,0,0,6"/>
         </Style>
-        <Style x:Key="PageHeader" TargetType="TextBlock">
+        <Style x:Key="PageHeader" TargetType="local:SkiaTextBlock">
             <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
             <Setter Property="FontSize" Value="24"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -314,9 +333,9 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <StackPanel Margin="10,10,10,14">
-                        <TextBlock Text="任务栏歌词" FontSize="16" FontWeight="SemiBold"
+                        <local:SkiaTextBlock Text="任务栏歌词" FontSize="16" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                        <TextBlock Text="设置" FontSize="12" Margin="0,2,0,0"
+                        <local:SkiaTextBlock Text="设置" FontSize="12" Margin="0,2,0,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                     </StackPanel>
                     <ListBox x:Name="NavList" Grid.Row="1" Background="Transparent" BorderThickness="0"
@@ -326,10 +345,10 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets"
+                                    <local:SkiaTextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets"
                                                FontSize="14" Width="26" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                    <TextBlock Text="{Binding Name}" FontSize="13" VerticalAlignment="Center"
+                                    <local:SkiaTextBlock Text="{Binding Name}" FontSize="13" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                 </StackPanel>
                             </DataTemplate>
@@ -345,8 +364,8 @@
                 <StackPanel>
                     <!-- 通用 -->
                     <StackPanel x:Name="PageGeneral" Visibility="Visible">
-                        <TextBlock Style="{StaticResource PageHeader}" Text="通用"/>
-                        <TextBlock Style="{StaticResource CardHeader}" Text="显示"/>
+                        <local:SkiaTextBlock Style="{StaticResource PageHeader}" Text="通用"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="显示"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -354,8 +373,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="显示模式"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="嵌入任务栏，或作为独立的置顶悬浮窗"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="显示模式"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="嵌入任务栏，或作为独立的置顶悬浮窗"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ModeCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
                                         <ComboBoxItem Content="任务栏模式"/>
@@ -368,8 +387,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="显示器"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="在哪块屏幕的任务栏上显示歌词"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="显示器"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="在哪块屏幕的任务栏上显示歌词"/>
                                     </StackPanel>
                                     <ComboBox x:Name="MonitorCombo" Grid.Column="1" Style="{StaticResource RowCombo}"/>
                                 </Grid>
@@ -379,8 +398,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="自动避让任务栏元素"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="自动停靠在任务栏空档里，宽度随可用空间伸缩，永不与图标托盘重叠（开启后任务栏内拖动停用，仅任务栏模式生效）"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="自动避让任务栏元素"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="自动停靠在任务栏空档里，宽度随可用空间伸缩，永不与图标托盘重叠（开启后任务栏内拖动停用，仅任务栏模式生效）"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="AutoPositionSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
@@ -391,8 +410,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="避让停靠侧"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="自动避让时停靠在任务栏的哪半边；空间紧时缩短显示，不跳到另一边（这半边被图标占满时除外）"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="避让停靠侧"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="自动避让时停靠在任务栏的哪半边；空间紧时缩短显示，不跳到另一边（这半边被图标占满时除外）"/>
                                     </StackPanel>
                                     <ComboBox x:Name="AutoSideCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
                                         <ComboBoxItem Content="右半边"/>
@@ -405,8 +424,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="停靠对齐"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="窗口在空档内的停靠位置；左对齐贴图标侧，悬停展开按钮时不推图标"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="停靠对齐"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="窗口在空档内的停靠位置；左对齐贴图标侧，悬停展开按钮时不推图标"/>
                                     </StackPanel>
                                     <ComboBox x:Name="AutoAlignCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
                                         <ComboBoxItem Content="左对齐"/>
@@ -420,15 +439,15 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="全屏时自动隐藏"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="全屏应用（如游戏）在前台且与歌词同屏时隐藏"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="全屏时自动隐藏"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="全屏应用（如游戏）在前台且与歌词同屏时隐藏"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="HideFullscreenSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
-                        <TextBlock Style="{StaticResource CardHeader}" Text="行为"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="行为"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -436,8 +455,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="锁定位置"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="锁定后鼠标穿透、不可拖动，可在托盘菜单解锁"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="锁定位置"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="锁定后鼠标穿透、不可拖动，可在托盘菜单解锁"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="LockedSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
@@ -448,15 +467,15 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="开机自启"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="登录 Windows 后自动启动"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="开机自启"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="登录 Windows 后自动启动"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="AutostartSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
-                        <TextBlock Style="{StaticResource CardHeader}" Text="听歌统计"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="听歌统计"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -464,8 +483,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="记录听歌统计"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="记下听了哪些歌、听了多久，只存在本机、不上传；关闭后不再记录，已有数据保留"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="记录听歌统计"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="记下听了哪些歌、听了多久，只存在本机、不上传；关闭后不再记录，已有数据保留"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="StatsSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
@@ -476,8 +495,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="统计页显示封面和头像"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="播放时顺带从网易云、QQ 音乐下载专辑封面和歌手头像，存在本机；关闭后不再下载，也不显示"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="统计页显示封面和头像"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="播放时顺带从网易云、QQ 音乐下载专辑封面和歌手头像，存在本机；关闭后不再下载，也不显示"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="StatsImagesSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
@@ -488,8 +507,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="查看统计"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="累计时长、最常听的歌和歌手、一天里什么时候听；托盘菜单里也能打开"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="查看统计"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="累计时长、最常听的歌和歌手、一天里什么时候听；托盘菜单里也能打开"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="打开" HorizontalAlignment="Right" VerticalAlignment="Center"
                                             Padding="12,5" Click="OpenStats_Click"/>
@@ -500,8 +519,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="清空听歌统计"/>
-                                        <TextBlock x:Name="StatsStatusText" Style="{StaticResource RowDesc}"
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="清空听歌统计"/>
+                                        <local:SkiaTextBlock x:Name="StatsStatusText" Style="{StaticResource RowDesc}"
                                                    Text="删除全部听歌记录，统计从头开始；不可恢复"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="清空" HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -509,7 +528,7 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
-                        <TextBlock Style="{StaticResource CardHeader}" Text="更新"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="更新"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -517,9 +536,9 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="当前版本"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="当前版本"/>
                                     </StackPanel>
-                                    <TextBlock x:Name="VersionText" Grid.Column="1" VerticalAlignment="Center"
+                                    <local:SkiaTextBlock x:Name="VersionText" Grid.Column="1" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                                 </Grid>
                                 <Border Style="{StaticResource RowSeparator}"/>
@@ -528,8 +547,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="自动检查更新"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="启动时自动检查新版本，发现后右键菜单出现更新入口"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="自动检查更新"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="启动时自动检查新版本，发现后右键菜单出现更新入口"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="UpdateCheckSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
@@ -540,8 +559,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="检查更新"/>
-                                        <TextBlock x:Name="UpdateStatusText" Style="{StaticResource RowDesc}" Text=""/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="检查更新"/>
+                                        <local:SkiaTextBlock x:Name="UpdateStatusText" Style="{StaticResource RowDesc}" Text=""/>
                                     </StackPanel>
                                     <Button x:Name="UpdateButton" Grid.Column="1" Content="检查更新"
                                             HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -553,8 +572,8 @@
 
                     <!-- 歌词 -->
                     <StackPanel x:Name="PageLyrics" Visibility="Collapsed">
-                        <TextBlock Style="{StaticResource PageHeader}" Text="歌词"/>
-                        <TextBlock Style="{StaticResource CardHeader}" Text="内容"/>
+                        <local:SkiaTextBlock Style="{StaticResource PageHeader}" Text="歌词"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="内容"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -562,8 +581,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="第二行"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="优先显示译文；无译文时自动显示下一句"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="第二行"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="优先显示译文；无译文时自动显示下一句"/>
                                     </StackPanel>
                                     <ComboBox x:Name="SecondLineCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
                                         <ComboBoxItem Content="译文"/>
@@ -577,8 +596,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="逐字歌词"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="卡拉 OK 逐字扫过效果（需要歌曲有逐字词源）"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="逐字歌词"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="卡拉 OK 逐字扫过效果（需要歌曲有逐字词源）"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="KaraokeSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
@@ -589,15 +608,15 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="歌词偏移"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="单位秒，-3 ~ 3，歌词比人声慢就调大"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="歌词偏移"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="单位秒，-3 ~ 3，歌词比人声慢就调大"/>
                                     </StackPanel>
                                     <TextBox x:Name="OffsetBox" Grid.Column="1" Width="72" HorizontalAlignment="Right"
                                              VerticalAlignment="Center" Text="0"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
-                        <TextBlock Style="{StaticResource CardHeader}" Text="播放源"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="播放源"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -605,8 +624,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="播放器来源"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="从哪些播放器获取播放状态"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="播放器来源"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="从哪些播放器获取播放状态"/>
                                     </StackPanel>
                                     <ComboBox x:Name="SourceCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
                                         <ComboBoxItem Content="自动（优先网易云）"/>
@@ -620,8 +639,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="屏蔽播放器"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="屏蔽后不再从该播放器获取播放状态（如浏览器）"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="屏蔽播放器"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="屏蔽后不再从该播放器获取播放状态（如浏览器）"/>
                                     </StackPanel>
                                     <Button x:Name="BlockButton" Grid.Column="1" HorizontalAlignment="Right"
                                             VerticalAlignment="Center" Padding="12,5" Click="BlockButton_Click"/>
@@ -629,8 +648,8 @@
                                 <Border Style="{StaticResource RowSeparator}"/>
                                 <Grid Style="{StaticResource Row}">
                                     <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="已屏蔽的播放器"/>
-                                        <TextBlock x:Name="BlockedDescText" Style="{StaticResource RowDesc}"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="已屏蔽的播放器"/>
+                                        <local:SkiaTextBlock x:Name="BlockedDescText" Style="{StaticResource RowDesc}"/>
                                     </StackPanel>
                                 </Grid>
                                 <!-- 名单逐条列出、逐条解除：被屏蔽的播放器永远当不上「当前播放器」，
@@ -644,7 +663,7 @@
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Style="{StaticResource RowTitle}" Text="{Binding}" ToolTip="{Binding}"
+                                                    <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="{Binding}" ToolTip="{Binding}"
                                                                VerticalAlignment="Center" Margin="12,0,16,0"
                                                                TextTrimming="CharacterEllipsis"/>
                                                     <Button Grid.Column="1" Content="取消屏蔽" Tag="{Binding}"
@@ -657,7 +676,7 @@
                                 </ItemsControl>
                             </StackPanel>
                         </Border>
-                        <TextBlock Style="{StaticResource CardHeader}" Text="缓存"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="缓存"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -665,8 +684,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="歌词缓存"/>
-                                        <TextBlock x:Name="CacheStatusText" Style="{StaticResource RowDesc}"
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="歌词缓存"/>
+                                        <local:SkiaTextBlock x:Name="CacheStatusText" Style="{StaticResource RowDesc}"
                                                    Text="抓到的歌词会在本地存 30 天，再听同一首不用联网；抓错了版本可清空后重新获取"/>
                                     </StackPanel>
                                     <Button x:Name="ClearCacheButton" Grid.Column="1" Content="清空歌词缓存"
@@ -679,8 +698,8 @@
 
                     <!-- 外观 -->
                     <StackPanel x:Name="PageAppearance" Visibility="Collapsed">
-                        <TextBlock Style="{StaticResource PageHeader}" Text="外观"/>
-                        <TextBlock Style="{StaticResource CardHeader}" Text="文字"/>
+                        <local:SkiaTextBlock Style="{StaticResource PageHeader}" Text="外观"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="文字"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -688,7 +707,7 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="字体"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="字体"/>
                                     </StackPanel>
                                     <ComboBox x:Name="FontCombo" Grid.Column="1" Style="{StaticResource RowCombo}"
                                               IsEditable="True"/>
@@ -699,8 +718,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="字号"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="8 ~ 24，译文自动小一号"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="字号"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="8 ~ 24，译文自动小一号"/>
                                     </StackPanel>
                                     <TextBox x:Name="FontSizeBox" Grid.Column="1" Width="72" HorizontalAlignment="Right"
                                              VerticalAlignment="Center"/>
@@ -711,8 +730,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="加粗原文"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="歌词第一行（原文）使用半粗体，任务栏上更清晰；译文保持常规"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="加粗原文"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="歌词第一行（原文）使用半粗体，任务栏上更清晰；译文保持常规"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="FontBoldSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
@@ -723,8 +742,70 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="文字对齐"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="居中时以文字中心为锚，行宽变化不漂移"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="歌词绘制引擎"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="点击“应用”后切换，歌名和歌手信息一起更新"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="LyricsRendererCombo" Grid.Column="1" Style="{StaticResource RowCombo}"
+                                              SelectionChanged="RendererCombo_SelectionChanged">
+                                        <ComboBoxItem Content="SkiaSharp（默认）"/>
+                                        <ComboBoxItem Content="WPF（原始）"/>
+                                    </ComboBox>
+                                </Grid>
+                                <Border Style="{StaticResource RowSeparator}"/>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="歌词字形对齐（Hinting）"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="仅用于 SkiaSharp，WPF 使用原生文字渲染"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="LyricsHintingCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
+                                        <ComboBoxItem Content="关闭"/>
+                                        <ComboBoxItem Content="轻度"/>
+                                        <ComboBoxItem Content="标准（默认）"/>
+                                        <ComboBoxItem Content="完整"/>
+                                    </ComboBox>
+                                </Grid>
+                                <Border Style="{StaticResource RowSeparator}"/>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="设置窗口绘制引擎"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="保存后重新打开设置窗口生效；输入框始终使用原生编辑"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="SettingsRendererCombo" Grid.Column="1" Style="{StaticResource RowCombo}"
+                                              SelectionChanged="RendererCombo_SelectionChanged">
+                                        <ComboBoxItem Content="SkiaSharp（默认）"/>
+                                        <ComboBoxItem Content="WPF（原始）"/>
+                                    </ComboBox>
+                                </Grid>
+                                <Border Style="{StaticResource RowSeparator}"/>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="窗口字形对齐（Hinting）"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="仅用于 SkiaSharp，与歌词的 Hinting 分开保存"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="SettingsHintingCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
+                                        <ComboBoxItem Content="关闭"/>
+                                        <ComboBoxItem Content="轻度"/>
+                                        <ComboBoxItem Content="标准（默认）"/>
+                                        <ComboBoxItem Content="完整"/>
+                                    </ComboBox>
+                                </Grid>
+                                <Border Style="{StaticResource RowSeparator}"/>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="文字对齐"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="居中时以文字中心为锚，行宽变化不漂移"/>
                                     </StackPanel>
                                     <ComboBox x:Name="AlignCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
                                         <ComboBoxItem Content="居中"/>
@@ -737,8 +818,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="文字颜色"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="跟随系统时：深色任务栏白字、浅色任务栏深字，切换主题自动跟上"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="文字颜色"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="跟随系统时：深色任务栏白字、浅色任务栏深字，切换主题自动跟上"/>
                                     </StackPanel>
                                     <ComboBox x:Name="ColorModeCombo" Grid.Column="1" Style="{StaticResource RowCombo}"
                                               SelectionChanged="ColorModeCombo_SelectionChanged">
@@ -752,8 +833,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="原文颜色"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="格式 #RRGGBB，或点右边的预设色"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="原文颜色"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="格式 #RRGGBB，或点右边的预设色"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right"
                                                 VerticalAlignment="Center">
@@ -780,8 +861,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="译文颜色"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="格式 #RRGGBB，或点右边的预设色"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="译文颜色"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="格式 #RRGGBB，或点右边的预设色"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right"
                                                 VerticalAlignment="Center">
@@ -806,15 +887,15 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="文字阴影"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="给笔画描一层反差色（深字配白影、浅字配黑影），压在花哨壁纸上也看得清"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="文字阴影"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="给笔画描一层反差色（深字配白影、浅字配黑影），压在花哨壁纸上也看得清"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="ShadowSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
-                        <TextBlock Style="{StaticResource CardHeader}" Text="布局"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="布局"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -822,8 +903,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="专辑封面"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="在歌词左侧显示封面"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="专辑封面"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="在歌词左侧显示封面"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="ShowCoverSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
@@ -834,8 +915,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="悬停控制按钮"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="鼠标悬停时显示播放/切歌按钮"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="悬停控制按钮"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="鼠标悬停时显示播放/切歌按钮"/>
                                     </StackPanel>
                                     <ToggleButton x:Name="ShowControlsSwitch" Grid.Column="1" Style="{StaticResource Switch}"
                                                   VerticalAlignment="Center"/>
@@ -846,8 +927,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="最大宽度"/>
-                                        <TextBlock Style="{StaticResource RowDesc}" Text="歌词区最大宽度（像素），超出部分横向滚动"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="最大宽度"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="歌词区最大宽度（像素），超出部分横向滚动"/>
                                     </StackPanel>
                                     <ComboBox x:Name="WidthCombo" Grid.Column="1" Width="96" HorizontalAlignment="Right"
                                               VerticalAlignment="Center" IsEditable="True">
@@ -864,7 +945,7 @@
 
                     <!-- 关于 -->
                     <StackPanel x:Name="PageAbout" Visibility="Collapsed">
-                        <TextBlock Style="{StaticResource PageHeader}" Text="关于"/>
+                        <local:SkiaTextBlock Style="{StaticResource PageHeader}" Text="关于"/>
                         <Border Style="{StaticResource Card}">
                             <Grid Margin="16,18">
                                 <Grid.ColumnDefinitions>
@@ -873,22 +954,22 @@
                                 <!-- 徽标用 MDL2 字形而非位图：矢量、跟随主题明暗，也不必把 ico 打进资源 -->
                                 <Border Width="52" Height="52" CornerRadius="10" VerticalAlignment="Top"
                                         Background="{DynamicResource AccentFillColorDefaultBrush}">
-                                    <TextBlock Text="&#xE189;" FontFamily="Segoe MDL2 Assets" FontSize="26"
+                                    <local:SkiaTextBlock Text="&#xE189;" FontFamily="Segoe MDL2 Assets" FontSize="26"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"/>
                                 </Border>
                                 <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock Text="任务栏歌词" FontSize="18" FontWeight="SemiBold"
+                                    <local:SkiaTextBlock Text="任务栏歌词" FontSize="18" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                    <TextBlock x:Name="AboutVersionText" FontSize="12" Margin="0,3,0,0"
+                                    <local:SkiaTextBlock x:Name="AboutVersionText" FontSize="12" Margin="0,3,0,0"
                                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                                    <TextBlock Style="{StaticResource RowDesc}" Margin="0,8,0,0"
+                                    <local:SkiaTextBlock Style="{StaticResource RowDesc}" Margin="0,8,0,0"
                                                Text="把正在播放的歌词嵌进 Windows 任务栏的空白处，随可用空间伸缩、不与图标托盘重叠；也可切换为独立置顶浮窗。"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
 
-                        <TextBlock Style="{StaticResource CardHeader}" Text="链接"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="链接"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid Style="{StaticResource Row}">
@@ -896,8 +977,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="项目主页"/>
-                                        <TextBlock Style="{StaticResource RowDesc}"
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="项目主页"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}"
                                                    Text="github.com/ChissaQAQ/TaskbarLyrics"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="打开" Padding="12,5" VerticalAlignment="Center"
@@ -909,8 +990,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="反馈问题"/>
-                                        <TextBlock Style="{StaticResource RowDesc}"
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="反馈问题"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}"
                                                    Text="歌词抓错、显示异常、崩溃日志都可以提 Issue"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="打开" Padding="12,5" VerticalAlignment="Center"
@@ -922,8 +1003,8 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Style="{StaticResource RowTitle}" Text="日志目录"/>
-                                        <TextBlock Style="{StaticResource RowDesc}"
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="日志目录"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}"
                                                    Text="异常会记到程序目录的 error.log，反馈时附上更好定位"/>
                                     </StackPanel>
                                     <Button x:Name="OpenLogDirButton" Grid.Column="1" Content="打开" Padding="12,5"
@@ -932,14 +1013,14 @@
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Style="{StaticResource CardHeader}" Text="说明"/>
+                        <local:SkiaTextBlock Style="{StaticResource CardHeader}" Text="说明"/>
                         <Border Style="{StaticResource Card}">
                             <StackPanel Margin="16,14" >
-                                <TextBlock Style="{StaticResource RowDesc}" TextWrapping="Wrap"
+                                <local:SkiaTextBlock Style="{StaticResource RowDesc}" TextWrapping="Wrap"
                                            Text="播放信息（歌名、歌手、进度）取自 Windows 自带的媒体传输控件（SMTC），因此理论上支持所有向系统上报播放状态的播放器，无需为某个客户端做适配。"/>
-                                <TextBlock Style="{StaticResource RowDesc}" Margin="0,10,0,0" TextWrapping="Wrap"
+                                <local:SkiaTextBlock Style="{StaticResource RowDesc}" Margin="0,10,0,0" TextWrapping="Wrap"
                                            Text="歌词依次向网易云音乐、QQ 音乐、LRCLIB 查询，取第一个匹配上歌名与歌手的结果；译文与罗马音只有网易云提供，逐字歌词来自酷狗。歌词均为各平台用户上传，个别歌曲曲库里本身就没有或对不上时间轴，属于数据本身的上限。"/>
-                                <TextBlock Style="{StaticResource RowDesc}" Margin="0,10,0,0" TextWrapping="Wrap"
+                                <local:SkiaTextBlock Style="{StaticResource RowDesc}" Margin="0,10,0,0" TextWrapping="Wrap"
                                            Text="「检查更新」查询 GitHub Releases 上的最新版本，发现新版后可一键下载并自动替换重启，配置与歌词缓存都会保留。"/>
                             </StackPanel>
                         </Border>

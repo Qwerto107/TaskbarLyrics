@@ -98,6 +98,7 @@ public partial class OverlayWindow : Window
     /// <summary>原文字号（DIP，对应 Python pt_to_px）。</summary>
     private double OrigFontDip => Cfg.FontSize * 96.0 / 72.0;
     private double TransFontDip => Math.Max(7, Cfg.FontSize - 4) * 96.0 / 72.0;
+    private const TextFormattingMode FormattingMode = TextFormattingMode.Display;
 
     public OverlayWindow(MainController app)
     {
@@ -113,7 +114,7 @@ public partial class OverlayWindow : Window
             if (HwndSource.FromHwnd(_hwnd)?.CompositionTarget is { } target)
                 target.RenderMode = RenderMode.SoftwareOnly;
             SetLocked(Cfg.Locked);
-            ApplyTextRendering();
+            ApplyTextSettings();
             ApplyThemeChrome();
             Dock();
             // 前台切换即时重摆：任务栏 XAML 层在前台变化瞬间会盖住嵌入窗口，
@@ -252,8 +253,7 @@ public partial class OverlayWindow : Window
                 if (!ReferenceEquals(LinesHost.Children[i], oldLine))
                     LinesHost.Children.RemoveAt(i);
 
-            // 旧行正在淡出、没人再看它的高亮，却仍在每帧重算 Clip——而文本上挂着
-            // DropShadowEffect，内容一变整块就得重新模糊一遍。暂停（不是移除）让高亮
+            // 旧行正在淡出，不再更新逐字裁剪。暂停（不是移除）让高亮
             // 定格在当前位置：Remove 会把 PositionMs 还原成基值 0，整行高亮瞬间清空
             oldSb?.Pause(this);
             // Pause 只停了逐字 Storyboard；横向平滑滚动是 ScrollingTextHost 自己的
@@ -369,7 +369,7 @@ public partial class OverlayWindow : Window
         // 紧凑布局：宽度随当前行文本自适应（Cfg.Width 作为最大宽度，超出由 FitFont 缩字号）
         var origW = karaoke.MeasureLineWidth();
         var transW = translation.Length > 0 && Cfg.SecondLine != "off"
-            ? KaraokeText.MeasureTextWidth(translation, new FontFamily(Cfg.FontFamily), TransFontDip, DpiScaleX())
+            ? KaraokeText.MeasureTextWidth(translation, new FontFamily(Cfg.FontFamily), TransFontDip, DpiScaleX(), formattingMode: FormattingMode)
             : 0;
         var targetWidth = Math.Clamp(QuantizeWidth(Math.Max(origW, transW) + (IsLeftAlign ? 16 : 28)),
             80, Cfg.Width);
@@ -480,14 +480,12 @@ public partial class OverlayWindow : Window
         TitleText.FontSize = OrigFontDip;
         TitleText.FontWeight = Cfg.FontBold ? FontWeights.SemiBold : FontWeights.Normal; // 与歌词原文一致
         TitleText.LineHeight = Math.Ceiling(OrigFontDip * 1.3); // 与歌词行同规则固定行高
-        TitleText.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
         TitleText.Foreground = new SolidColorBrush(Theme.TextColor(Cfg));
         TitleText.HorizontalAlignment = align;
         ArtistText.Text = artist;
         ArtistText.FontFamily = family;
         ArtistText.FontSize = TransFontDip;
         ArtistText.LineHeight = Math.Ceiling(TransFontDip * 1.3);
-        ArtistText.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
         ArtistText.Margin = new Thickness(0, 3, 0, 0); // 与歌词行相同的上下间距
         ArtistText.Foreground = new SolidColorBrush(Theme.TransColor(Cfg));
         ArtistText.HorizontalAlignment = align;
@@ -495,8 +493,8 @@ public partial class OverlayWindow : Window
 
         var dpi = DpiScaleX();
         var titleWeight = Cfg.FontBold ? FontWeights.SemiBold : FontWeights.Normal;
-        var tw = KaraokeText.MeasureTextWidth(title, family, OrigFontDip, dpi, titleWeight);
-        var aw = artist.Length > 0 ? KaraokeText.MeasureTextWidth(artist, family, TransFontDip, dpi) : 0;
+        var tw = KaraokeText.MeasureTextWidth(title, family, OrigFontDip, dpi, titleWeight, FormattingMode);
+        var aw = artist.Length > 0 ? KaraokeText.MeasureTextWidth(artist, family, TransFontDip, dpi, formattingMode: FormattingMode) : 0;
         _infoWidthDip = Math.Clamp(Math.Max(tw, aw) + (IsLeftAlign ? 16 : 28), 80, Cfg.Width);
         Dock();
     }
@@ -762,7 +760,7 @@ public partial class OverlayWindow : Window
         var weight = Cfg.FontBold ? FontWeights.SemiBold : FontWeights.Normal; // 原文半粗更清晰，译文保持常规
         var karaoke = new KaraokeText();
         karaoke.SetLine(original, words, new FontFamily(Cfg.FontFamily), OrigFontDip, bright, pending,
-            Cfg.Shadow, blackShadow, align, weight);
+            Cfg.Shadow, blackShadow, align, weight, FormattingMode);
 
         var sp = new NaturalMeasureStack { VerticalAlignment = VerticalAlignment.Center };
         sp.Children.Add(karaoke);
@@ -773,7 +771,7 @@ public partial class OverlayWindow : Window
             var transBrush = Freeze(new SolidColorBrush(transColor));
             trans = new TranslationText { Margin = new Thickness(0, 3, 0, 0) }; // 与原文之间的行距
             trans.SetText(translation, new FontFamily(Cfg.FontFamily), TransFontDip, transBrush,
-                Cfg.Shadow, Theme.BlackShadow(transColor), align, followProgress: words != null);
+                Cfg.Shadow, Theme.BlackShadow(transColor), align, followProgress: words != null, formattingMode: FormattingMode);
             sp.Children.Add(trans);
         }
         return (sp, karaoke, trans);
@@ -799,6 +797,7 @@ public partial class OverlayWindow : Window
     /// 每轮重设一遍画刷属性会白白让渲染层重新失效，而这几个颜色只在主题切换时变。</summary>
     public void ApplyThemeChrome()
     {
+        ApplyTextSettings();
         HoverMask.Background = Theme.HoverMask;
         PlaceholderBg.Fill = Theme.PlaceholderBg;
         PlaceholderIcon.Foreground = Theme.PlaceholderIcon;
@@ -1227,19 +1226,22 @@ public partial class OverlayWindow : Window
     public void ApplyLayout(string? currentOriginal, string currentTranslation,
         IReadOnlyList<KaraokeWord>? words, double lineElapsedMs, bool playing)
     {
-        ApplyTextRendering();
+        ApplyTextSettings();
         Dock();
         if (currentOriginal != null)
             SetLine(currentOriginal, currentTranslation, words, lineElapsedMs, playing);
     }
 
-    /// <summary>按字重选择文字渲染：粗笔画在分层透明窗上用 ClearType 子像素渲染
-    /// 会在边缘留下彩色毛边（加粗后「毛刺感」的来源），灰阶抗锯齿配粗笔画更干净；
-    /// 细字重则仍需 ClearType 保持锐利。</summary>
-    private void ApplyTextRendering()
+    /// <summary>渲染方案与文字宽度测量共用排版模式，切换设置时一起更新。</summary>
+    private void ApplyTextSettings()
     {
+        TextOptions.SetTextFormattingMode(Root, FormattingMode);
+        SkiaTextBlock.SetRenderer(Root, Cfg.LyricsRenderer);
+        SkiaTextBlock.ApplyHinting(Root, Cfg.LyricsHinting);
+        // WPF 模式恢复原先的自动抗锯齿和按字重选择的 ClearType 提示。
+        TextOptions.SetTextRenderingMode(Root, TextRenderingMode.Auto);
         RenderOptions.SetClearTypeHint(Root,
-            Cfg.FontBold ? ClearTypeHint.Auto : ClearTypeHint.Enabled);
+            Cfg.LyricsRenderer == "wpf" && !Cfg.FontBold ? ClearTypeHint.Enabled : ClearTypeHint.Auto);
     }
 
     // ---- 拖动 / 右键 ----
