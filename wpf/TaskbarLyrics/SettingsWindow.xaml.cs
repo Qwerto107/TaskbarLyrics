@@ -107,7 +107,7 @@ public partial class SettingsWindow : Window
         StatsSwitch.IsChecked = cfg.StatsEnabled;
         StatsImagesSwitch.IsChecked = cfg.StatsImages;
 
-        SecondLineCombo.SelectedIndex = cfg.SecondLine == "romaji" ? 1 : cfg.SecondLine == "off" ? 2 : 0;
+        SecondLineCombo.SelectedIndex = Math.Max(0, Array.IndexOf(SecondLineValues, cfg.SecondLine));
         KaraokeSwitch.IsChecked = cfg.Karaoke;
         LyricsSyncCombo.SelectedIndex = cfg.LyricsSync == "netease_hook" ? 1 : 0;
         HookStatusText.Text = _app.LyricsHookStatus;
@@ -188,7 +188,7 @@ public partial class SettingsWindow : Window
         if (LyricsHintingCombo != null) LyricsHintingCombo.IsEnabled = LyricsRendererCombo.SelectedIndex != 1;
         if (SettingsHintingCombo != null) SettingsHintingCombo.IsEnabled = SettingsRendererCombo.SelectedIndex != 1;
     }
-    private static readonly string[] SecondLineValues = { "translation", "romaji", "off" };
+    private static readonly string[] SecondLineValues = { "translation", "romaji", "next", "off" };
     private static readonly string[] SourceValues = { "auto", "netease", "others" };
     private static readonly string[] RendererValues = { "skia", "wpf" };
     private static readonly string[] HintingValues = { "none", "slight", "normal", "full" };
@@ -261,7 +261,7 @@ public partial class SettingsWindow : Window
         }
 
         var cfg = Cfg;
-        var secondLine = SecondLineValues[Math.Clamp(now.SecondLine, 0, 2)];
+        var secondLine = SecondLineValues[Math.Clamp(now.SecondLine, 0, SecondLineValues.Length - 1)];
         var secondLineChanged = now.SecondLine != was.SecondLine && cfg.SecondLine != secondLine;
         var karaokeChanged = now.Karaoke != was.Karaoke && cfg.Karaoke != now.Karaoke;
 

@@ -289,7 +289,8 @@ public sealed class MainController : IDisposable
         var (title, artist, durationS) = (state.Title, state.Artist, state.DurationS);
         var key = state.Key;
         var withKaraoke = Cfg.Karaoke;
-        var secondLine = Cfg.SecondLine;
+        // 下一句直接取原文列表，不需要抓取第二行的译文/罗马音。
+        var secondLine = Cfg.SecondLine == "next" ? "off" : Cfg.SecondLine;
         Task.Run(async () =>
         {
             Lyrics.FetchResult r;
@@ -535,8 +536,8 @@ public sealed class MainController : IDisposable
             else
             {
                 original = orig;
-                translation = trans;
-                // 无译文/罗马音时（如中文歌），第二行显示下一句歌词
+                translation = Cfg.SecondLine == "next" ? "" : trans;
+                // 显式选择下一句，或译文/罗马音缺失时，显示下一条原文。
                 if (translation.Length == 0 && Cfg.SecondLine != "off"
                     && index + 1 < lines.Count)
                     translation = lines[index + 1].Text;

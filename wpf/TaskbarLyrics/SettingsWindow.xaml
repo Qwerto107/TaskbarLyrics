@@ -603,6 +603,7 @@
                                     <ComboBox x:Name="SecondLineCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
                                         <ComboBoxItem Content="译文"/>
                                         <ComboBoxItem Content="罗马音"/>
+                                        <ComboBoxItem Content="下一句歌词"/>
                                         <ComboBoxItem Content="关闭"/>
                                     </ComboBox>
                                 </Grid>

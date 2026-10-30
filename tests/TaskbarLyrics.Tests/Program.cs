@@ -96,6 +96,16 @@ static class Program
 
         var app = new TaskbarLyrics.App(); app.InitializeComponent();
         using var controller = new MainController();
+        Check(new AppConfig().SecondLine == "translation", "第二行默认仍为译文");
+        foreach (var second in new[] { "translation", "romaji", "next", "off" }) {
+            controller.Cfg.SecondLine = second;
+            var window = new SettingsWindow(controller, 1);
+            var combo = (ComboBox)window.FindName("SecondLineCombo");
+            Check(combo.Items.Count == 4 && combo.SelectedIndex == Array.IndexOf(new[] { "translation", "romaji", "next", "off" }, second), "第二行选项回填 " + second);
+            var roundtrip = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(new AppConfig { SecondLine = second }))!;
+            Check(roundtrip.SecondLine == second, "第二行配置持久化 " + second);
+            window.Close();
+        }
         controller.Cfg.SecondLine = "translation";
         foreach (var mode in new[] { "timeline", "netease_hook" }) {
             controller.Cfg.LyricsSync = mode;
@@ -194,6 +204,21 @@ static class Program
         main.GetField("_state", flags)!.SetValue(controller, playback);
         controller.Cfg.LyricsSync = "timeline"; SetFrame(.8); tick.Invoke(controller, null);
         Check((string)main.GetField("_shownOriginal", flags)!.GetValue(controller)! == "原有歌词", "手动选择原有方案后不受 Hook 影响");
+        playback.BasePositionS = 0;
+        main.GetField("_lines", flags)!.SetValue(controller, new List<LyricLine> { new(0, "当前原文", "当前译文"), new(1000, "下一句原文", "下一句译文") });
+        foreach (var second in new[] { "translation", "next" }) {
+            controller.Cfg.SecondLine = second;
+            tick.Invoke(controller, null);
+            Check((string)main.GetField("_shownTranslation", flags)!.GetValue(controller)! == (second == "next" ? "下一句原文" : "当前译文"), "有译文时第二行选择 " + second);
+        }
+        playback.BasePositionS = 1;
+        tick.Invoke(controller, null);
+        Check((string)main.GetField("_shownTranslation", flags)!.GetValue(controller)! == "", "下一句模式末句留空，不回退译文");
+        playback.BasePositionS = 0;
+        controller.Cfg.SecondLine = "translation";
+        main.GetField("_lines", flags)!.SetValue(controller, new List<LyricLine> { new(0, "当前原文", null), new(1000, "下一句原文", null) });
+        tick.Invoke(controller, null);
+        Check((string)main.GetField("_shownTranslation", flags)!.GetValue(controller)! == "下一句原文", "默认译文缺失时仍自动显示下一句");
         overlay.Close();
         app.Shutdown();
     }
