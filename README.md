@@ -146,7 +146,7 @@ wpf/publish/TaskbarLyrics.exe --stats-test [report | shot <目录> [real]]
 
 ### 发布
 
-更新项目文件中的版本号和 `CHANGELOG.md`，提交并推送代码后，再推送同版本的标签，例如 `v1.0.32`。GitHub Actions 会校验标签与项目版本是否一致，验证成功后创建 Release，上传 `TaskbarLyrics.exe`，并从更新日志提取该版说明。
+更新项目文件中的版本号和 `CHANGELOG.md`，提交并推送代码后，再推送同版本的标签，例如 `v1.0.33`。GitHub Actions 会校验标签与项目版本是否一致，验证成功后创建 Release，上传 `TaskbarLyrics.exe`，并从更新日志提取该版说明。
 
 普通分支推送和 Pull Request 只验证、打包，不创建 Release。
 
