@@ -1,4 +1,4 @@
-// 崩溃/异常日志：首选写在 exe 同目录的 error.log（与 config.json 同级），那里写不进去
+// 崩溃/异常日志：首选写在 exe 同目录的 error.log，那里写不进去
 // （装在 Program Files、从只读介质运行）时退到 %AppData%\TaskbarLyrics\error.log。
 // 长时间运行时的偶发异常最难查的地方在于它什么都不留：UI 线程一个未捕获异常
 // 就直接终止进程，事后连异常类型和调用栈都拿不到。这里只做最朴素的一件事——

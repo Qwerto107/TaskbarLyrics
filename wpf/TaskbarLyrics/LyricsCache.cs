@@ -23,8 +23,7 @@ public static class LyricsCache
     private const int MaxFiles = 400;    // 超出后淘汰最旧的一批（约 3~5 MB）
     private const int EvictBatch = 100;
 
-    /// <summary>缓存目录，跟着配置文件走（exe 同目录只读时配置会落到 %AppData%，
-    /// 缓存也一起跟过去）。每次取值都重算：ConfigPath 会在首次存盘失败后切换。</summary>
+    /// <summary>缓存跟随用户目录下的配置文件保存。</summary>
     private static string Dir =>
         Path.Combine(Path.GetDirectoryName(AppConfig.ConfigPath) ?? AppContext.BaseDirectory,
             "lyrics-cache");

@@ -119,7 +119,7 @@ public sealed class AppConfig
                     ? "translation" : "off";
             }
             node.Remove("show_translation");
-            // 旧的 WPF 渲染选项已由 Skia Hinting 替代，不作为扩展键继续写回。
+            // 清理已停用的文字预设；WPF 引擎仍由独立的 renderer 设置控制。
             node.Remove("text_rendering");
             // 共用 Hinting 拆成歌词和设置窗口两份，已有独立配置时不覆盖。
             if (node.TryGetPropertyValue("font_hinting", out var hinting))

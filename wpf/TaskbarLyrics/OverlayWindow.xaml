@@ -33,10 +33,9 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <!-- 歌词与媒体信息使用 Skia 抗锯齿；固定 Display 排版供测量和逐字裁剪共用。 -->
+    <!-- 初始排版使用 Display；ApplyTextSettings 按引擎设置最终排版和抗锯齿。 -->
     <Grid x:Name="Root"
           TextOptions.TextFormattingMode="Display"
-          TextOptions.TextRenderingMode="Grayscale"
           UseLayoutRounding="True">
         <!-- 浮动模式底色：半透明深色圆角底（仅浮动模式显示），
              遮住分层窗逐帧重绘的闪烁感，也让整个条可拖动（不再只能抓文字） -->
