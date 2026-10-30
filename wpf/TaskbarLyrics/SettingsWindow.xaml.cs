@@ -33,6 +33,10 @@ public partial class SettingsWindow : Window
         NavList.SelectedIndex = Math.Clamp(page, 0, 3);
         LoadValues();
         _baseline = ReadForm();
+        var hookStatusTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        hookStatusTimer.Tick += (_, _) => HookStatusText.Text = _app.LyricsHookStatus;
+        Loaded += (_, _) => hookStatusTimer.Start();
+        Closed += (_, _) => hookStatusTimer.Stop();
     }
 
     /// <summary>Win11 22H2+ 启用 Mica 背景材质；不支持时（如 Win10）保留 XAML 里的
@@ -105,6 +109,8 @@ public partial class SettingsWindow : Window
 
         SecondLineCombo.SelectedIndex = cfg.SecondLine == "romaji" ? 1 : cfg.SecondLine == "off" ? 2 : 0;
         KaraokeSwitch.IsChecked = cfg.Karaoke;
+        LyricsSyncCombo.SelectedIndex = cfg.LyricsSync == "netease_hook" ? 1 : 0;
+        HookStatusText.Text = _app.LyricsHookStatus;
         OffsetBox.Text = (cfg.OffsetMs / 1000.0).ToString("0.0");
 
         SourceCombo.SelectedIndex = cfg.PlayerSource == "netease" ? 1 : cfg.PlayerSource == "others" ? 2 : 0;
@@ -191,7 +197,7 @@ public partial class SettingsWindow : Window
     private sealed record FormValues(
         int Mode, int Monitor, bool HideOnFullscreen, bool AutoPosition, int AutoSide, int AutoAlign,
         bool Locked, bool UpdateCheck, bool StatsEnabled, bool StatsImages,
-        int SecondLine, bool Karaoke, string Offset, int Source,
+        int SecondLine, bool Karaoke, string Offset, int Source, int LyricsSync,
         string Font, string FontSize, bool FontBold, int LyricsRenderer, int SettingsRenderer, int LyricsHinting, int SettingsHinting, int Align, string Width,
         int ColorMode, string TextColor, string TransColor, bool Shadow, bool ShowCover, bool ShowControls);
 
@@ -204,7 +210,7 @@ public partial class SettingsWindow : Window
         AutoSideCombo.SelectedIndex, AutoAlignCombo.SelectedIndex,
         LockedSwitch.IsChecked == true, UpdateCheckSwitch.IsChecked == true, StatsSwitch.IsChecked == true, StatsImagesSwitch.IsChecked == true,
         SecondLineCombo.SelectedIndex, KaraokeSwitch.IsChecked == true, OffsetBox.Text,
-        SourceCombo.SelectedIndex,
+        SourceCombo.SelectedIndex, LyricsSyncCombo.SelectedIndex,
         FontCombo.Text, FontSizeBox.Text, FontBoldSwitch.IsChecked == true,
         LyricsRendererCombo.SelectedIndex, SettingsRendererCombo.SelectedIndex,
         LyricsHintingCombo.SelectedIndex, SettingsHintingCombo.SelectedIndex,
@@ -273,6 +279,7 @@ public partial class SettingsWindow : Window
             };
         if (secondLineChanged) cfg.SecondLine = secondLine;
         if (karaokeChanged) cfg.Karaoke = now.Karaoke;
+        if (now.LyricsSync != was.LyricsSync) cfg.LyricsSync = now.LyricsSync == 1 ? "netease_hook" : "timeline";
         if (now.Offset != was.Offset) cfg.OffsetMs = Math.Clamp((int)(offsetS * 1000), -3000, 3000);
         if (now.Source != was.Source) cfg.PlayerSource = SourceValues[Math.Clamp(now.Source, 0, 2)];
         var family = now.Font.Trim();

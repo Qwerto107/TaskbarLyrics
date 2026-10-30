@@ -581,6 +581,22 @@
                                         <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="歌词同步方案"/>
+                                        <local:SkiaTextBlock Style="{StaticResource RowDesc}" MaxWidth="270" HorizontalAlignment="Left" TextWrapping="Wrap"
+                                                            Text="Hook 支持网易云单行或双行歌词；无逐字进度时整行显示"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="LyricsSyncCombo" Grid.Column="1" Style="{StaticResource RowCombo}">
+                                        <ComboBoxItem Content="原有时间轴（默认）"/>
+                                        <ComboBoxItem Content="网易云桌面歌词 Hook"/>
+                                    </ComboBox>
+                                </Grid>
+                                <local:SkiaTextBlock x:Name="HookStatusText" Style="{StaticResource RowDesc}" Margin="16,0,16,8" TextWrapping="Wrap"/>
+                                <Border Style="{StaticResource RowSeparator}"/>
+                                <Grid Style="{StaticResource Row}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                         <local:SkiaTextBlock Style="{StaticResource RowTitle}" Text="第二行"/>
                                         <local:SkiaTextBlock Style="{StaticResource RowDesc}" Text="优先显示译文；无译文时自动显示下一句"/>
                                     </StackPanel>

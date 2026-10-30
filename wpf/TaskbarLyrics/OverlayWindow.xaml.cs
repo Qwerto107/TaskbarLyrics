@@ -385,9 +385,11 @@ public partial class OverlayWindow : Window
         {
             var narrowTo = targetWidth;
             var forLine = _currentLine; // 密集切行时上一条动画的收尾不该覆盖更新的行
+            var secondAtStart = translation;
             lineSb.Completed += (_, _) =>
             {
-                if (!ReferenceEquals(_currentLine, forLine)) return;
+                // 第二行可能在动画中原地更新，不能再按旧文本宽度收窄。
+                if (!ReferenceEquals(_currentLine, forLine) || _translation != secondAtStart) return;
                 _lyricsWidthDip = narrowTo;
                 Dock(assertZOrder: false);
             };
@@ -771,7 +773,8 @@ public partial class OverlayWindow : Window
             var transBrush = Freeze(new SolidColorBrush(transColor));
             trans = new TranslationText { Margin = new Thickness(0, 3, 0, 0) }; // 与原文之间的行距
             trans.SetText(translation, new FontFamily(Cfg.FontFamily), TransFontDip, transBrush,
-                Cfg.Shadow, Theme.BlackShadow(transColor), align, followProgress: words != null, formattingMode: FormattingMode);
+                Cfg.Shadow, Theme.BlackShadow(transColor), align,
+                followProgress: words != null, formattingMode: FormattingMode);
             sp.Children.Add(trans);
         }
         return (sp, karaoke, trans);
@@ -821,6 +824,43 @@ public partial class OverlayWindow : Window
         _karaokeStoryboard.Begin(this, true);
         _sbPlaying = true;
         SyncProgress(elapsedMs, playing);
+    }
+
+    internal void SetCapturedProgress(double? progress)
+    {
+        // Hook 采用实测的绘制比例，停止时间轴动画后直接更新裁剪。
+        ReleaseKaraoke(_karaokeStoryboard);
+        _karaokeStoryboard = null;
+        _karaoke?.SetCapturedProgress(progress);
+        _transLine?.SetFollowProgress(progress.HasValue);
+        if (progress.HasValue) _transLine?.ScrollToFraction(progress.Value);
+    }
+
+    internal void UpdateHookSecondLine(string translation)
+    {
+        _translation = translation;
+        if (_currentLine is not Panel panel) return;
+        if (translation.Length == 0 || Cfg.SecondLine == "off")
+        {
+            if (_transLine != null) panel.Children.Remove(_transLine);
+            _transLine = null;
+            return;
+        }
+        if (_transLine == null)
+        {
+            _transLine = new TranslationText { Margin = new Thickness(0, 3, 0, 0) };
+            panel.Children.Add(_transLine);
+        }
+        var color = Theme.TransColor(Cfg);
+        _transLine.SetText(translation, new FontFamily(Cfg.FontFamily), TransFontDip,
+            Freeze(new SolidColorBrush(color)), Cfg.Shadow, Theme.BlackShadow(color),
+            IsLeftAlign ? HorizontalAlignment.Left : HorizontalAlignment.Center,
+            followProgress: _karaoke?.HasCapturedProgress == true, formattingMode: FormattingMode);
+        var width = KaraokeText.MeasureTextWidth(translation, new FontFamily(Cfg.FontFamily), TransFontDip,
+            DpiScaleX(), formattingMode: FormattingMode);
+        var target = Math.Clamp(QuantizeWidth(width + (IsLeftAlign ? 16 : 28)), 80, Cfg.Width);
+        if (target > _lyricsWidthDip) { _lyricsWidthDip = target; Dock(assertZOrder: false); }
+        ApplyViewportWidth();
     }
 
     /// <summary>~50ms 周期调用：用 SMTC 本地插值进度校准逐字动画（暂停时冻结）。

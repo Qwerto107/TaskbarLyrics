@@ -4,7 +4,12 @@ wpf/publish/
 wpf/TaskbarLyrics/publish/
 wpf/TaskbarLyrics/bin/
 wpf/TaskbarLyrics/obj/
+tests/**/bin/
+tests/**/obj/
 config.json
+.lyrics-hook/
+hook-draw-trace.log
+hook-diagnostic.png
 
 # 运行期产物（跟着 config.json 落在 exe 同目录或 %AppData%\TaskbarLyrics）
 error.log

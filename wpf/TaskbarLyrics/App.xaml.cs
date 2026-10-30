@@ -3,6 +3,8 @@
 //       TaskbarLyrics.exe --settings     只打开设置窗口（不启动歌词覆盖层）
 //       TaskbarLyrics.exe --lyrics-test "歌名" "歌手" [translation|romaji|off] [时长秒]   控制台验证歌词抓取
 //       TaskbarLyrics.exe --update-test                                        控制台验证检查更新与配额
+//       TaskbarLyrics.exe --hook-test [秒]                                      诊断网易云可见歌词与高亮
+//       TaskbarLyrics.exe --hook-trace                                         正常运行并记录绘制关联
 //       TaskbarLyrics.exe --stats-test [report | shot <目录> [real]]           控制台自测听歌统计
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -61,6 +63,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         InstallExceptionHandlers();
+        DesktopLyricsHook.TraceDrawCalls = e.Args.Contains("--hook-trace");
 
         // 接力替换模式（更新用）：TaskbarLyrics-new.exe --apply-update "<目标exe>" <旧pid>
         if (e.Args.Length >= 3 && e.Args[0] == "--apply-update")
@@ -106,6 +109,19 @@ public partial class App : Application
             System.Threading.SynchronizationContext.SetSynchronizationContext(null);
             Updater.RunConsoleTestAsync().GetAwaiter().GetResult();
             Shutdown(0);
+            return;
+        }
+
+        // 桌面歌词 Hook 诊断：主动连接网易云，在指定秒数内输出文字与实测高亮比例。
+        if (e.Args.Length >= 1 && e.Args[0] == "--hook-test")
+        {
+            AttachConsole(-1);
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            System.Threading.SynchronizationContext.SetSynchronizationContext(null);
+            var seconds = e.Args.Length > 1 && int.TryParse(e.Args[1], out var duration) ? duration : 20;
+            var code = 1;
+            try { code = DesktopLyricsHook.RunConsoleTestAsync(seconds).GetAwaiter().GetResult(); }
+            finally { Shutdown(code); }
             return;
         }
 

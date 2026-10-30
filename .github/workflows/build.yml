@@ -1,6 +1,4 @@
-# 编译验证：确认任何人 clone 下来都能直接 build 出 exe。
-# 只跑 build/publish 不跑测试——这个项目的行为几乎全在 Win11 任务栏的真实
-# 窗口层级和 SMTC 上，CI runner 里没有可验的东西，硬凑单测只会给假安全感。
+# 编译、离线回归和标签发版。真实任务栏与播放器行为仍需在 Windows 上验证。
 name: build
 
 on:
@@ -43,6 +41,15 @@ jobs:
 
       - name: 编译
         run: dotnet build wpf/TaskbarLyrics -c Release
+
+      - name: 验证歌词绘制 Hook
+        shell: pwsh
+        run: |
+          & wpf/TaskbarLyrics/obj/native/Release/LyricsHookProbe.exe (Resolve-Path wpf/TaskbarLyrics/obj/native/Release/TaskbarLyricsHook19.dll)
+          if ($LASTEXITCODE -ne 0) { throw "歌词绘制 Hook 离线验证失败" }
+
+      - name: 验证歌词选句与设置
+        run: dotnet run --project tests/TaskbarLyrics.Tests -c Release
 
       # 与 README / 发布用的命令保持一致：框架依赖单文件，包含 Skia 原生库，不自包含 .NET。
       - name: 打包

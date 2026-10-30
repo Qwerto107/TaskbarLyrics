@@ -27,4 +27,17 @@
     <Using Remove="System.Windows.Forms" />
   </ItemGroup>
 
+  <!-- 原生模块作为资源随单文件发布；构建输出留在 obj，运行时按内容散列解包。 -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(BaseIntermediateOutputPath)native/Release/TaskbarLyricsHook19.dll" LogicalName="LyricsHook.dll" />
+    <EmbeddedResource Include="$(BaseIntermediateOutputPath)native/Release/LyricsHookInjector.exe" LogicalName="LyricsHookInjector.exe" />
+    <EmbeddedResource Include="../../native/LyricsHook/THIRD-PARTY.txt" LogicalName="LyricsHook.Licenses.txt" />
+  </ItemGroup>
+  <Target Name="BuildLyricsHook" BeforeTargets="PrepareForBuild"
+          Inputs="../../native/LyricsHook/CMakeLists.txt;../../native/LyricsHook/Hook.cpp;../../native/LyricsHook/DrawSources.h;../../native/LyricsHook/DrawCapture.h;../../native/LyricsHook/Injector.cpp;../../native/LyricsHook/Protocol.h;../../native/LyricsHook/Probe.cpp"
+          Outputs="$(BaseIntermediateOutputPath)native/Release/TaskbarLyricsHook19.dll;$(BaseIntermediateOutputPath)native/Release/LyricsHookInjector.exe;$(BaseIntermediateOutputPath)native/Release/LyricsHookProbe.exe">
+    <Exec Command="cmake -S &quot;$(MSBuildProjectDirectory)/../../native/LyricsHook&quot; -B &quot;$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)native&quot; -A x64" />
+    <Exec Command="cmake --build &quot;$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)native&quot; --config Release" />
+  </Target>
+
 </Project>

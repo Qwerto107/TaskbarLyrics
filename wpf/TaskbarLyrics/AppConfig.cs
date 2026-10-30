@@ -42,6 +42,7 @@ public sealed class AppConfig
     [JsonPropertyName("locked")] public bool Locked { get; set; }                      // 锁定后鼠标穿透
     [JsonPropertyName("show_cover")] public bool ShowCover { get; set; } = true;       // 显示专辑封面
     // 歌词
+    [JsonPropertyName("lyrics_sync")] public string LyricsSync { get; set; } = "timeline"; // timeline | netease_hook
     [JsonPropertyName("second_line")] public string SecondLine { get; set; } = "translation"; // translation | romaji | off
     [JsonPropertyName("karaoke")] public bool Karaoke { get; set; } = true;            // 逐字歌词
     [JsonPropertyName("offset_ms")] public int OffsetMs { get; set; } = 0;             // 歌词时间偏移（正为提前：posMs 加得多，查到更靠后的行）

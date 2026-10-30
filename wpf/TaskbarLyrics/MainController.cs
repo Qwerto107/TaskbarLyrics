@@ -20,6 +20,24 @@ public sealed class MainController : IDisposable
     private TrayIcon? _tray;
     private readonly CancellationTokenSource _cts = new();
     private DispatcherTimer? _lyricsTimer;  // 50ms：按本地计时刷新当前歌词行/逐字
+    private readonly DesktopLyricsHook _desktopHook = new();
+    internal string LyricsHookStatus
+    {
+        get
+        {
+            var frame = _desktopHook.Frame;
+            return Cfg.LyricsSync != "netease_hook" ? "当前使用原有时间轴"
+                : frame == null ? _desktopHook.Status
+                : !Cfg.Karaoke ? "逐字高亮已关闭"
+                : _hookCapturedProgress ? "逐字高亮：跟随网易云"
+                : _hookSawPartial || frame.ObservedProgress == 0 ? "逐字高亮：等待网易云进度"
+                : "整行显示（无逐字进度）";
+        }
+    }
+    private bool _hookLineActive;
+    private bool _hookCapturedProgress;
+    private double _hookDisplayedProgress;
+    private bool _hookSawPartial;
     private DispatcherTimer? _dockTimer;    // 1.5s：周期贴合任务栏 + 全屏检测
 
     // ---- 播放状态与歌词（_state/_lines/_karaoke 跨线程读写，用 volatile 引用）----
@@ -160,6 +178,8 @@ public sealed class MainController : IDisposable
         _lyricsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         _lyricsTimer.Tick += (_, _) => OnLyricsTick();
         _lyricsTimer.Start();
+        var hookToken = _cts.Token;
+        _ = Task.Run(() => _desktopHook.RunAsync(() => Cfg.LyricsSync == "netease_hook", hookToken));
 
         _dockTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
         _dockTimer.Tick += (_, _) =>
@@ -401,6 +421,29 @@ public sealed class MainController : IDisposable
             _songOffsetMs = 0;
         }
         if (Live == null) return; // 窗口正在重建（explorer 重启），本轮没有可刷的界面
+        var captured = _desktopHook.Frame;
+        if (Cfg.LyricsSync == "netease_hook")
+        {
+            if (captured != null) ShowDesktopLyrics(state, captured);
+            else
+            {
+                // 暂时未收到可见帧时保留上一句；状态信息只放在设置页。
+                if (!_hookLineActive)
+                {
+                    if (_shownOriginal != "") Overlay.SetLine("", "", null, 0, false);
+                    _shownOriginal = "";
+                    _shownTranslation = "";
+                    Overlay.SetMedia("", "");
+                }
+                Overlay.SetInfoMode(false);
+            }
+            return;
+        }
+        if (_hookLineActive)
+        {
+            _hookLineActive = false;
+            _forceLine = true;
+        }
         if (state == null)
         {
             // SMTC 会话瞬断（几秒内恢复）不闪藏窗口；消失超过 2s 才清空隐藏
@@ -554,6 +597,59 @@ public sealed class MainController : IDisposable
     // ---- 菜单动作 ----
 
     private bool _cfgSaveWarned;
+
+    private void ShowDesktopLyrics(PlaybackState? state, DesktopLyricsFrame frame)
+    {
+        var translation = Cfg.SecondLine == "off" ? "" : frame.Translation;
+        var original = frame.Original;
+        var hasProgress = Cfg.Karaoke && frame.Progress.HasValue;
+        var netease = state?.SourceId.Contains("cloudmusic", StringComparison.OrdinalIgnoreCase) == true;
+        var playing = !netease || state!.Playing;
+        var changed = !_hookLineActive || _shownOriginal != original;
+        if (changed)
+        {
+            // 换句以 Hook 文字为准，不再用播放器秒数或曲库时间戳定位。
+            _hookCapturedProgress = false;
+            _hookDisplayedProgress = 0;
+            _hookSawPartial = false;
+        }
+        if (frame.ObservedProgress is > 0 and < 0.995) _hookSawPartial = true;
+        // 只有真正换句/外观变更才重建，进度来源和第二行变化不能打断切行动画。
+        if (!_hookLineActive || _forceLine || _shownOriginal != original || _shownHasWords != Cfg.Karaoke)
+        {
+            _hookLineActive = true;
+            _forceLine = false;
+            _shownOriginal = original;
+            _shownTranslation = translation;
+            _shownHasWords = Cfg.Karaoke;
+            Overlay.SetLine(original, translation, null, 0, false);
+        }
+        else if (_shownTranslation != translation)
+        {
+            _shownTranslation = translation;
+            Overlay.UpdateHookSecondLine(translation);
+        }
+        if (hasProgress)
+        {
+            // 实测进度优先，不能把估算的提前量带到网易云进度里。
+            _hookDisplayedProgress = frame.Progress!.Value;
+            _hookCapturedProgress = true;
+        }
+        else if (_hookCapturedProgress && frame.ObservedProgress.HasValue)
+            _hookDisplayedProgress = Math.Min(_hookDisplayedProgress, frame.ObservedProgress.Value);
+        if (Cfg.Karaoke && _hookCapturedProgress) Overlay.SetCapturedProgress(_hookDisplayedProgress);
+        else if (Cfg.Karaoke && (_hookSawPartial || frame.ObservedProgress == 0))
+        {
+            // 逐字信号确认前保持未唱状态，不合成进度。
+            Overlay.SetCapturedProgress(0);
+        }
+        else Overlay.SetCapturedProgress(null);
+        Overlay.SetMedia(netease ? state!.Title : "", netease ? state!.Artist : "", _forceMedia);
+        _forceMedia = false;
+        Overlay.SetInfoMode(false);
+        Overlay.SetPlaying(playing);
+        EndGuide();
+    }
 
     /// <summary>存配置。连退路（%AppData%）都写不进去时提示一次：
     /// 不提示的话用户只会发现「设置每次重启都变回去」，完全无从下手。

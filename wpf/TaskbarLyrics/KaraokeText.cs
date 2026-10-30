@@ -402,6 +402,8 @@ public sealed class KaraokeText : ScrollingTextHost
     private HorizontalAlignment _align = HorizontalAlignment.Center;
     /// <summary>切行后首次定位：瞬时到位而不是从行首缓滚过去（从中途接上播放时）。</summary>
     private bool _needSnap = true;
+    private double? _capturedProgress;
+    private double _lineWidth;
 
     public static readonly DependencyProperty PositionMsProperty =
         DependencyProperty.Register(nameof(PositionMs), typeof(double), typeof(KaraokeText),
@@ -480,7 +482,8 @@ public sealed class KaraokeText : ScrollingTextHost
     {
         // 入树和换屏后使用实际 DPI，避免位图已更新但逐字边界仍按旧 DPI 测量。
         RebuildWordWidths(_targetFontSize);
-        SetNaturalWidth(MeasureWidth(_text, _targetFontSize));
+        _lineWidth = MeasureWidth(_text, _targetFontSize);
+        SetNaturalWidth(_lineWidth);
         UpdateClip();
     }
 
@@ -507,7 +510,7 @@ public sealed class KaraokeText : ScrollingTextHost
     }
 
     /// <summary>按目标字号测量当前行文本宽度（供窗口紧凑布局用）。</summary>
-    public double MeasureLineWidth() => MeasureWidth(_text, _targetFontSize);
+    public double MeasureLineWidth() => _lineWidth;
 
     /// <summary>文本明显超宽时切换为左对齐 + 横向滚动（有逐字数据时跟随播放进度，
     /// 无逐字数据时往返走马灯兜底）。</summary>
@@ -551,6 +554,11 @@ public sealed class KaraokeText : ScrollingTextHost
     /// <summary>按 PositionMs 重算高亮右边界并更新 Clip。</summary>
     private void UpdateClip()
     {
+        if (_capturedProgress.HasValue)
+        {
+            ApplyCapturedProgress();
+            return;
+        }
         if (_words == null || _words.Count == 0 || _wordEndX.Count != _words.Count)
         {
             _accent.Clip = null;
@@ -594,6 +602,28 @@ public sealed class KaraokeText : ScrollingTextHost
         else
         {
             ScrollToPixels(scrollTo);
+        }
+    }
+
+    internal void SetCapturedProgress(double? progress)
+    {
+        _capturedProgress = progress.HasValue ? Math.Clamp(progress.Value, 0, 1) : null;
+        _pending.Visibility = progress.HasValue ? Visibility.Visible : Visibility.Collapsed;
+        if (progress.HasValue) ApplyCapturedProgress();
+        else _accent.Clip = null;
+    }
+
+    internal bool HasCapturedProgress => _capturedProgress.HasValue;
+
+    private void ApplyCapturedProgress()
+    {
+        var fraction = _capturedProgress!.Value;
+        _accentClip.Rect = new Rect(0, -1000, MeasureLineWidth() * fraction, 12000);
+        _accent.Clip = _accentClip;
+        if (Overflowing)
+        {
+            Marquee.Clear(this);
+            ScrollToPixels(Overflow * fraction);
         }
     }
 }
@@ -660,6 +690,13 @@ public sealed class TranslationText : ScrollingTextHost
         {
             Marquee.Clear(this);
         }
+    }
+
+    internal void SetFollowProgress(bool follow)
+    {
+        if (_followProgress == follow) return;
+        _followProgress = follow;
+        OnOverflowChanged(Overflowing);
     }
 
     /// <summary>按原文滚动比例同步滚动（0~1）。</summary>

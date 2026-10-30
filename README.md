@@ -19,7 +19,7 @@
 
 ### 前提：播放器必须打开「系统媒体控件（SMTC）」上报
 
-程序通过 Windows 的系统媒体控件（SMTC）知道你在听什么。播放器没开这个上报的话，歌词条会一直显示「暂无歌词」。
+默认时间轴方案通过 Windows 的系统媒体控件（SMTC）读取当前歌曲，需要播放器开启媒体信息上报。网易云桌面歌词 Hook 可直接取词，使用方法见下文。
 
 检查方法：播放时按一下音量键，系统弹出的媒体浮层里能看到歌名和封面就没问题。
 
@@ -62,20 +62,38 @@
 
 ## 原理
 
-- 歌名、歌手和播放状态从 SMTC 读。网易云不报播放进度，所以进度是本地计时算的
+- 默认时间轴方案从 SMTC 读取歌名、歌手和播放状态。网易云不报播放进度时，通过本地计时推算
 - 歌词依次从网易云、QQ 音乐、LRCLIB 找，逐字时间轴来自酷狗 KRC
 - 用 `SetParent` 把窗口挂进任务栏（主屏 `Shell_TrayWnd`，副屏 `Shell_SecondaryTrayWnd`）
 
 ## 已知问题
 
-- 拖进度条感知不到，歌词会接着按原来的节奏走，换首歌就好了
-- 程序启动前就在放的歌，从启动那一刻开始计时
+- 默认时间轴方案在网易云不上报进度时无法感知拖动，程序启动前就在播放的歌也会从启动时开始计时
 - 罗马音只有网易云有
+
+## 网易云桌面歌词 Hook（实验性）
+
+在“设置 → 歌词 → 歌词同步方案”中选择 Hook，并开启 64 位网易云客户端的桌面歌词。原有时间轴方案仍为默认选项，文字渲染引擎独立设置。
+
+文字跟随缓存图像到最终窗口的绘制关系，预加载的下一句只有实际绘制后才显示。已建立关联的行不依赖字形相似度；尚未关联的缓存保留字形校验作为初始化兜底。
+
+高亮从最终透明图像中读取。只有确认逐字信号后才跟随进度，没有逐字的歌曲整行显示。程序不合成匀速扫光，也不读取曲库时间戳推算 Hook 进度。
+
+双行支持当前句和下一句上下交替，另一行作为第二行显示。连接状态只显示在设置页。暂时取不到文字时保留上一句，首次取词前保持空白。
+
+歌词偏移和罗马音转换仅用于原时间轴方案。捕获的是绘制位置比例，精度受字间空白、字体和排版差异影响。关闭 Hook 会停止采集，DLL 在网易云退出时释放。
+
+取词方式参考 [dsh-netease-lyrics](https://github.com/Hikari16665/dsh-netease-lyrics/blob/main/DEVELOPING.md)。原生模块使用 MinHook，许可见 [THIRD-PARTY.txt](native/LyricsHook/THIRD-PARTY.txt)。
 
 ## 开发
 
+构建需要 .NET 10 SDK、CMake 和 Visual Studio 的“使用 C++ 的桌面开发”工具。首次构建会下载固定提交和校验值的 MinHook 源码。原生模块自动编译并嵌入单文件程序，启用 Hook 时解包到程序旁的 `.lyrics-hook` 缓存目录，目录不可写时使用 `%LocalAppData%\TaskbarLyrics\hooks`。
+
 ```powershell
 dotnet build wpf/TaskbarLyrics -c Release
+
+# 离线验证选句、渲染和设置，不连接播放器
+dotnet run --project tests/TaskbarLyrics.Tests -c Release
 
 # 先关掉正在运行的程序，不然 exe 被占用会报 MSB4018
 Stop-Process -Name TaskbarLyrics -Force -ErrorAction SilentlyContinue
@@ -87,6 +105,13 @@ wpf/publish/TaskbarLyrics.exe --lyrics-test "歌名" "歌手" [translation|romaj
 
 # 测试检查更新
 wpf/publish/TaskbarLyrics.exe --update-test
+
+# 连接网易云桌面歌词，诊断 20 秒内的文字和高亮采样（不会修改同步方案设置）
+# 先退出正在运行的任务栏歌词，避免两个读端控制同一通道
+wpf/publish/TaskbarLyrics.exe --hook-test 20
+
+# 正常运行并记录绘制关联日志；仅排查问题时启用
+wpf/publish/TaskbarLyrics.exe --hook-trace
 
 # 听歌统计自测：不带参数跑断言；report 对本机真实记录出文字报告；
 # shot 把统计窗口、分享图、年度报告渲染成 PNG，浅色深色各一套（默认合成数据，加 real 用真实记录）
@@ -100,6 +125,7 @@ wpf/publish/TaskbarLyrics.exe --stats-test [report | shot <目录> [real]]
 | `MainController.cs` | 主循环，读 SMTC、找当前行、交给界面 |
 | `SmtcListener.cs` | 监听系统媒体控件 |
 | `Lyrics.cs` | 抓歌词、选版本、对齐译文和逐字时间 |
+| `DesktopLyricsHook.cs` | 读取可见歌词帧、选择当前句和实际高亮 |
 | `LyricsCache.cs` | 歌词缓存 |
 | `OverlayWindow.xaml(.cs)` | 歌词显示和动画 |
 | `SkiaTextBlock.cs` | Skia 文字绘制、阴影和 DPI 位图缓存 |
@@ -115,11 +141,13 @@ wpf/publish/TaskbarLyrics.exe --stats-test [report | shot <目录> [real]]
 
 不少看着多余的写法是为了绕开 Windows 的坑，注释里有写原因，改之前可以先看看。
 
+原生代码在 `native/LyricsHook/`：`Hook.cpp` 读取最终像素，`DrawCapture.h` 捕获绘制入口，`DrawSources.h` 跟踪缓存与文字的关联。`Probe.cpp` 使用自建窗口验证捕获，不连接网易云。
+
 ### 发布
 
-更新项目文件中的版本号和 `CHANGELOG.md`，提交并推送代码后，再推送同版本的标签，例如 `v1.0.32`。GitHub Actions 会校验标签与项目版本是否一致，编译成功后创建 Release，上传 `TaskbarLyrics.exe`，并从更新日志提取该版说明。
+更新项目文件中的版本号和 `CHANGELOG.md`，提交并推送代码后，再推送同版本的标签，例如 `v1.0.32`。GitHub Actions 会校验标签与项目版本是否一致，验证成功后创建 Release，上传 `TaskbarLyrics.exe`，并从更新日志提取该版说明。
 
-普通分支推送和 Pull Request 只编译、打包，不创建 Release。
+普通分支推送和 Pull Request 只验证、打包，不创建 Release。
 
 ## 反馈
 
