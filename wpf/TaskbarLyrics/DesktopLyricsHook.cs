@@ -111,12 +111,14 @@ internal sealed class DesktopLyricsHook
     private static string ChannelName(int pid) => $"Local\\TaskbarLyrics.Draw.v{ProtocolVersion}.{pid}";
     internal static bool TraceDrawCalls { get; set; }
     private volatile DesktopLyricsFrame? _frame;
+    private volatile bool _connected;
     private volatile string _status = "未启用";
     private int _textSamples, _fillSamples, _pixelSamples;
     private volatile string _lastFill = "无";
     private volatile string _pixelInfo = "无";
     private bool _diagnostics;
     public DesktopLyricsFrame? Frame => _frame;
+    public bool IsConnected => _connected;
     public string Status => _status;
 
     internal static async Task<int> RunConsoleTestAsync(int seconds)
@@ -260,6 +262,7 @@ internal sealed class DesktopLyricsHook
                             var seen = traceLog != null ? 0 : view.ReadInt32(8);
                             var lastProbe = Clock.Now;
                             var sample = new byte[SlotSize];
+                            _connected = true;
                             while (enabled() && !token.IsCancellationRequested)
                             {
                                 signal.WaitOne(16);
@@ -323,7 +326,13 @@ internal sealed class DesktopLyricsHook
                                     : "已取词，未识别高亮进度";
                             }
                         }
-                        finally { view.Write(4, 0); _frame = null; }
+                        finally
+                        {
+                            // 先撤销旧帧，再通知显示层清空；短暂缺帧仍由连接状态区分。
+                            _frame = null;
+                            _connected = false;
+                            view.Write(4, 0);
+                        }
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)

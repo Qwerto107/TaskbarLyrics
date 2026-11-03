@@ -150,6 +150,8 @@ static class Program
         main.GetField("_state", flags)!.SetValue(controller, playback);
         main.GetField("_lines", flags)!.SetValue(controller, new List<LyricLine> { new(0, "原有歌词", null) });
         var hook = main.GetField("_desktopHook", flags)!.GetValue(controller)!;
+        var connectedField = hook.GetType().GetField("_connected", flags)!;
+        connectedField.SetValue(hook, true);
         var frameType = typeof(AppConfig).Assembly.GetType("TaskbarLyrics.DesktopLyricsFrame")!;
         void SetFrame(double? progress, double? observed = 1)
         {
@@ -196,7 +198,25 @@ static class Program
         tick.Invoke(controller, null);
         Check((string)main.GetField("_shownOriginal", flags)!.GetValue(controller)! == "单行新歌词", "暂时未匹配到时保留上一句");
         Check(!(bool)typeof(OverlayWindow).GetField("_infoMode", flags)!.GetValue(overlay)!, "歌词条不显示诊断占位信息");
-        main.GetField("_hookLineActive", flags)!.SetValue(controller, false);
+        connectedField.SetValue(hook, false);
+        tick.Invoke(controller, null);
+        Check((string)main.GetField("_shownOriginal", flags)!.GetValue(controller)! == ""
+            && (string)main.GetField("_shownTranslation", flags)!.GetValue(controller)! == "",
+            "Hook 断开后清空两行，即使 SMTC 仍保留歌曲状态");
+        Check(!(bool)typeof(OverlayWindow).GetField("_hasContent", flags)!.GetValue(overlay)!
+            && !(bool)typeof(OverlayWindow).GetProperty("WantVisible", flags)!.GetValue(overlay)!,
+            "Hook 断开后隐藏歌词条");
+        Check(!(bool)main.GetField("_hookLineActive", flags)!.GetValue(controller)!
+            && (string)typeof(OverlayWindow).GetField("_title", flags)!.GetValue(overlay)! == ""
+            && (string)typeof(OverlayWindow).GetField("_artist", flags)!.GetValue(overlay)! == "",
+            "Hook 断开后复位显示状态并清空歌曲信息");
+        connectedField.SetValue(hook, true);
+        SetFrame(.2); tick.Invoke(controller, null);
+        Check((string)main.GetField("_shownOriginal", flags)!.GetValue(controller)! == "Hook 歌词"
+            && (bool)typeof(OverlayWindow).GetProperty("WantVisible", flags)!.GetValue(overlay)!
+            && Math.Abs(HighlightFraction() - .2) < .001, "Hook 重新连接后恢复歌词及实测高亮");
+        hook.GetType().GetField("_frame", flags)!.SetValue(hook, null);
+        connectedField.SetValue(hook, false);
         main.GetField("_state", flags)!.SetValue(controller, null);
         tick.Invoke(controller, null);
         Check((string)typeof(OverlayWindow).GetField("_title", flags)!.GetValue(overlay)! == ""

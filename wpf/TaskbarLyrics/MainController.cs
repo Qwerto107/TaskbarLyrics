@@ -428,13 +428,16 @@ public sealed class MainController : IDisposable
             if (captured != null) ShowDesktopLyrics(state, captured);
             else
             {
-                // 暂时未收到可见帧时保留上一句；状态信息只放在设置页。
-                if (!_hookLineActive)
+                // 连接内短暂缺帧保留上一句；播放器退出或连接结束后清空并隐藏。
+                if (!_desktopHook.IsConnected || !_hookLineActive)
                 {
                     if (_shownOriginal != "") Overlay.SetLine("", "", null, 0, false);
+                    _hookLineActive = false;
                     _shownOriginal = "";
                     _shownTranslation = "";
+                    _shownHasWords = false;
                     Overlay.SetMedia("", "");
+                    Overlay.SetPlaying(false);
                 }
                 Overlay.SetInfoMode(false);
             }
